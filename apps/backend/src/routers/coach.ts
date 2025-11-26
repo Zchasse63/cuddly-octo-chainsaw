@@ -8,8 +8,9 @@ import {
   getOffTopicResponse,
   rankExerciseSwaps,
 } from '../services/aiCoach';
-import { userProfiles, exercises, personalRecords } from '../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { createRagCoach } from '../services/aiCoachRag';
+import { userProfiles, exercises, personalRecords, conversations, messages } from '../db/schema';
+import { eq, desc, and } from 'drizzle-orm';
 
 export const coachRouter = router({
   // Classify a message
@@ -181,5 +182,236 @@ export const coachRouter = router({
       );
 
       return { response };
+    }),
+
+  // ============ RAG-ENHANCED ENDPOINTS ============
+
+  // RAG-enhanced chat with knowledge retrieval
+  ragChat: protectedProcedure
+    .input(
+      z.object({
+        message: z.string().min(1),
+        conversationId: z.string().uuid().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const ragCoach = createRagCoach(ctx.db);
+
+      // Get or create conversation
+      const conversationId =
+        input.conversationId ||
+        (await ragCoach.getOrCreateConversation(ctx.user.id, 'general'));
+
+      // Get conversation history
+      const history = await ctx.db.query.messages.findMany({
+        where: eq(messages.conversationId, conversationId),
+        orderBy: [desc(messages.createdAt)],
+        limit: 10,
+      });
+
+      // Get user profile
+      const profile = await ctx.db.query.userProfiles.findFirst({
+        where: eq(userProfiles.userId, ctx.user.id),
+      });
+
+      // Get recent PRs
+      const recentPrs = await ctx.db.query.personalRecords.findMany({
+        where: eq(personalRecords.userId, ctx.user.id),
+        orderBy: [desc(personalRecords.achievedAt)],
+        limit: 5,
+        with: { exercise: true },
+      });
+
+      // Build context
+      const context = {
+        userId: ctx.user.id,
+        name: profile?.name || undefined,
+        experienceLevel: profile?.experienceLevel || undefined,
+        goals: profile?.goals || undefined,
+        injuries: profile?.injuries ? [profile.injuries] : undefined,
+        recentPrs: recentPrs.map((pr) => ({
+          exercise: pr.exercise?.name || 'Unknown',
+          weight: pr.weight,
+          reps: pr.reps,
+        })),
+        conversationHistory: history.reverse().map((m) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      };
+
+      // Generate RAG-enhanced response
+      const result = await ragCoach.generateResponse(input.message, context);
+
+      // Save messages to conversation
+      await ragCoach.saveMessage(conversationId, 'user', input.message, {
+        userId: ctx.user.id,
+      });
+      await ragCoach.saveMessage(conversationId, 'assistant', result.response, {
+        userId: ctx.user.id,
+        sources: result.sources.map((s) => s.id),
+        cues: result.cues.map((c) => c.id),
+      });
+
+      return {
+        response: result.response,
+        conversationId,
+        sources: result.sources,
+        cues: result.cues,
+      };
+    }),
+
+  // Get form tips for an exercise
+  getFormTips: protectedProcedure
+    .input(z.object({ exerciseName: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const ragCoach = createRagCoach(ctx.db);
+      return ragCoach.getFormTips(input.exerciseName);
+    }),
+
+  // Answer a topic-specific question using knowledge base
+  askWithKnowledge: protectedProcedure
+    .input(
+      z.object({
+        question: z.string().min(1),
+        category: z
+          .enum(['strength', 'running', 'mobility', 'injury', 'nutrition', 'recovery'])
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const ragCoach = createRagCoach(ctx.db);
+      return ragCoach.answerTopicQuestion(input.question, input.category);
+    }),
+
+  // Get personalized exercise recommendations
+  getExerciseRecommendations: protectedProcedure
+    .input(
+      z.object({
+        muscleGroup: z.string().optional(),
+        equipment: z.array(z.string()).optional(),
+        avoidExercises: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const ragCoach = createRagCoach(ctx.db);
+
+      const profile = await ctx.db.query.userProfiles.findFirst({
+        where: eq(userProfiles.userId, ctx.user.id),
+      });
+
+      const recentPrs = await ctx.db.query.personalRecords.findMany({
+        where: eq(personalRecords.userId, ctx.user.id),
+        orderBy: [desc(personalRecords.achievedAt)],
+        limit: 3,
+        with: { exercise: true },
+      });
+
+      const context = {
+        userId: ctx.user.id,
+        name: profile?.name || undefined,
+        experienceLevel: profile?.experienceLevel || undefined,
+        goals: profile?.goals || undefined,
+        injuries: profile?.injuries ? [profile.injuries] : undefined,
+        recentPrs: recentPrs.map((pr) => ({
+          exercise: pr.exercise?.name || 'Unknown',
+          weight: pr.weight,
+          reps: pr.reps,
+        })),
+      };
+
+      return ragCoach.getExerciseRecommendations(context, input);
+    }),
+
+  // Get conversation history
+  getConversations: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(50).default(10),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const convos = await ctx.db.query.conversations.findMany({
+        where: eq(conversations.userId, ctx.user.id),
+        orderBy: [desc(conversations.updatedAt)],
+        limit: input.limit,
+        offset: input.offset,
+      });
+
+      return convos;
+    }),
+
+  // Get messages for a conversation
+  getMessages: protectedProcedure
+    .input(
+      z.object({
+        conversationId: z.string().uuid(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      // Verify conversation belongs to user
+      const conversation = await ctx.db.query.conversations.findFirst({
+        where: and(
+          eq(conversations.id, input.conversationId),
+          eq(conversations.userId, ctx.user.id)
+        ),
+      });
+
+      if (!conversation) {
+        throw new Error('Conversation not found');
+      }
+
+      const msgs = await ctx.db.query.messages.findMany({
+        where: eq(messages.conversationId, input.conversationId),
+        orderBy: [messages.createdAt],
+        limit: input.limit,
+      });
+
+      return msgs;
+    }),
+
+  // Start a new conversation
+  startConversation: protectedProcedure
+    .input(
+      z.object({
+        contextType: z
+          .enum(['general', 'workout', 'program', 'injury'])
+          .default('general'),
+        contextId: z.string().uuid().optional(),
+        title: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [conversation] = await ctx.db
+        .insert(conversations)
+        .values({
+          userId: ctx.user.id,
+          contextType: input.contextType,
+          contextId: input.contextId,
+          title: input.title,
+          isActive: true,
+        })
+        .returning();
+
+      return conversation;
+    }),
+
+  // End a conversation
+  endConversation: protectedProcedure
+    .input(z.object({ conversationId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db
+        .update(conversations)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(conversations.id, input.conversationId),
+            eq(conversations.userId, ctx.user.id)
+          )
+        );
+
+      return { success: true };
     }),
 });

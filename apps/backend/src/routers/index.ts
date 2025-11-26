@@ -19,6 +19,7 @@ import { socialRouter } from './social';
 import { analyticsRouter } from './analytics';
 import { wearablesRouter } from './wearables';
 import { devicesRouter } from './devices';
+import { wodsRouter } from './wods';
 
 export const appRouter = router({
   auth: authRouter,
@@ -41,6 +42,7 @@ export const appRouter = router({
   analytics: analyticsRouter,
   wearables: wearablesRouter,
   devices: devicesRouter,
+  wods: wodsRouter,
 });
 
 // Export type for client

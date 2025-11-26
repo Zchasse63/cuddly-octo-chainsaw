@@ -46,3 +46,6 @@ export * from './wearables';
 
 // Sync & offline schemas (PowerSync)
 export * from './sync';
+
+// CrossFit schemas
+export * from './crossfit';

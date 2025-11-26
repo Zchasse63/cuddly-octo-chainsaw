@@ -1688,3 +1688,174 @@ CREATE TRIGGER update_sync_checkpoints_updated_at
 CREATE TRIGGER update_device_registrations_updated_at
   BEFORE UPDATE ON device_registrations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- PHASE 6: CROSSFIT SUPPORT
+-- ============================================
+
+-- WOD type enum
+CREATE TYPE wod_type AS ENUM (
+  'amrap',
+  'emom',
+  'for_time',
+  'chipper',
+  'ladder',
+  'tabata',
+  'death_by',
+  'custom'
+);
+
+-- CrossFit WOD library
+CREATE TABLE crossfit_wods (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE, -- 'Fran', 'Murph', etc.
+  wod_type wod_type NOT NULL,
+  description TEXT,
+
+  -- Workout structure
+  movements JSONB NOT NULL, -- [{ exercise, reps, weight, notes }]
+  time_cap_minutes INTEGER,
+  rounds INTEGER, -- for AMRAP
+  interval_seconds INTEGER, -- for EMOM
+
+  -- Metadata
+  is_benchmark BOOLEAN DEFAULT false, -- "The Girls"
+  is_hero_wod BOOLEAN DEFAULT false, -- Hero WODs
+  difficulty_level TEXT, -- 'beginner', 'intermediate', 'advanced', 'elite'
+
+  -- Standards
+  rx_standards JSONB, -- { male: { weight: 135 }, female: { weight: 95 } }
+  scaling_options JSONB, -- [{ name: 'scaled', modifications: [...] }]
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- WOD performance logs
+CREATE TABLE wod_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  wod_id UUID REFERENCES crossfit_wods(id) ON DELETE SET NULL,
+  workout_id UUID REFERENCES workouts(id) ON DELETE SET NULL,
+
+  logged_at TIMESTAMP DEFAULT NOW() NOT NULL,
+
+  -- Results (depends on wod_type)
+  result_time_seconds INTEGER, -- for_time
+  result_rounds INTEGER, -- AMRAP rounds
+  result_reps INTEGER, -- AMRAP extra reps
+  result_load JSONB, -- weights used { movement: weight }
+
+  -- Scaling
+  was_rx BOOLEAN DEFAULT false,
+  scaling_notes TEXT,
+
+  notes TEXT,
+
+  -- Voice input
+  raw_voice_input TEXT,
+  voice_command_id UUID REFERENCES voice_commands(id),
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- User benchmark tracking (best performances)
+CREATE TABLE wod_benchmarks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  wod_id UUID REFERENCES crossfit_wods(id) ON DELETE CASCADE NOT NULL,
+  wod_log_id UUID REFERENCES wod_logs(id) ON DELETE SET NULL,
+
+  -- Best results
+  best_time_seconds INTEGER,
+  best_rounds INTEGER,
+  best_reps INTEGER,
+
+  achieved_at TIMESTAMP NOT NULL,
+  previous_best_time_seconds INTEGER,
+  improvement_seconds INTEGER,
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+
+  UNIQUE(user_id, wod_id)
+);
+
+-- ============================================
+-- CROSSFIT INDEXES
+-- ============================================
+
+CREATE INDEX idx_crossfit_wods_wod_type ON crossfit_wods(wod_type);
+CREATE INDEX idx_crossfit_wods_is_benchmark ON crossfit_wods(is_benchmark);
+CREATE INDEX idx_crossfit_wods_is_hero_wod ON crossfit_wods(is_hero_wod);
+CREATE INDEX idx_crossfit_wods_name ON crossfit_wods(name);
+
+CREATE INDEX idx_wod_logs_user_id ON wod_logs(user_id);
+CREATE INDEX idx_wod_logs_wod_id ON wod_logs(wod_id);
+CREATE INDEX idx_wod_logs_logged_at ON wod_logs(logged_at);
+
+CREATE INDEX idx_wod_benchmarks_user_id ON wod_benchmarks(user_id);
+CREATE INDEX idx_wod_benchmarks_wod_id ON wod_benchmarks(wod_id);
+
+-- ============================================
+-- CROSSFIT RLS POLICIES
+-- ============================================
+
+ALTER TABLE crossfit_wods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wod_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wod_benchmarks ENABLE ROW LEVEL SECURITY;
+
+-- WODs are readable by all authenticated users
+CREATE POLICY "WODs are viewable by all users"
+  ON crossfit_wods FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- WOD logs are private to the user
+CREATE POLICY "Users can view their own WOD logs"
+  ON wod_logs FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can create their own WOD logs"
+  ON wod_logs FOR INSERT
+  TO authenticated
+  WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can update their own WOD logs"
+  ON wod_logs FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can delete their own WOD logs"
+  ON wod_logs FOR DELETE
+  TO authenticated
+  USING (user_id = auth.uid());
+
+-- WOD benchmarks are private to the user
+CREATE POLICY "Users can view their own WOD benchmarks"
+  ON wod_benchmarks FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can create their own WOD benchmarks"
+  ON wod_benchmarks FOR INSERT
+  TO authenticated
+  WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can update their own WOD benchmarks"
+  ON wod_benchmarks FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can delete their own WOD benchmarks"
+  ON wod_benchmarks FOR DELETE
+  TO authenticated
+  USING (user_id = auth.uid());
+
+-- ============================================
+-- CROSSFIT TRIGGERS
+-- ============================================
+
+CREATE TRIGGER update_wod_benchmarks_updated_at
+  BEFORE UPDATE ON wod_benchmarks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
