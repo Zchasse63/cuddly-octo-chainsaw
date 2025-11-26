@@ -28,3 +28,21 @@ export * from './conversations';
 
 // PR history schemas
 export * from './pr-history';
+
+// Running & Cardio schemas
+export * from './running';
+
+// Nutrition schemas (Apple Health + Terra integration)
+export * from './nutrition';
+
+// Social feature schemas
+export * from './social';
+
+// Analytics schemas
+export * from './analytics';
+
+// Wearable integration schemas
+export * from './wearables';
+
+// Sync & offline schemas (PowerSync)
+export * from './sync';

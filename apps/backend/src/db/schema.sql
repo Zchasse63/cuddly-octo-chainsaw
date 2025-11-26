@@ -722,3 +722,969 @@ $$ language 'plpgsql' SECURITY DEFINER;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+-- ============================================
+-- PHASE 2: RUNNING & CARDIO
+-- ============================================
+
+CREATE TYPE run_type AS ENUM (
+  'easy', 'tempo', 'interval', 'long_run', 'recovery', 'fartlek', 'hill', 'race'
+);
+
+-- Running activities
+CREATE TABLE running_activities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  run_type run_type DEFAULT 'easy',
+  name TEXT,
+  notes TEXT,
+  distance_meters REAL,
+  duration_seconds INTEGER,
+  avg_pace_seconds_per_km REAL,
+  avg_heart_rate INTEGER,
+  max_heart_rate INTEGER,
+  elevation_gain_meters REAL,
+  calories_burned INTEGER,
+  avg_cadence INTEGER,
+  avg_stride_length REAL,
+  splits JSONB,
+  route_polyline TEXT,
+  start_latitude REAL,
+  start_longitude REAL,
+  source TEXT DEFAULT 'manual',
+  external_id TEXT,
+  program_id UUID,
+  program_week INTEGER,
+  program_day INTEGER,
+  started_at TIMESTAMP NOT NULL,
+  completed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Running programs
+CREATE TABLE running_programs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  goal TEXT,
+  target_race_date DATE,
+  target_time INTEGER,
+  duration_weeks INTEGER NOT NULL,
+  current_week INTEGER DEFAULT 1,
+  status TEXT DEFAULT 'active',
+  start_date DATE,
+  end_date DATE,
+  template_id UUID,
+  is_template BOOLEAN DEFAULT false,
+  is_public BOOLEAN DEFAULT false,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Running program workouts
+CREATE TABLE running_program_workouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  program_id UUID REFERENCES running_programs(id) ON DELETE CASCADE NOT NULL,
+  week_number INTEGER NOT NULL,
+  day_of_week INTEGER NOT NULL,
+  run_type run_type NOT NULL,
+  name TEXT,
+  description TEXT,
+  target_distance_meters REAL,
+  target_duration_seconds INTEGER,
+  target_pace_min REAL,
+  target_pace_max REAL,
+  target_heart_rate_zone TEXT,
+  intervals JSONB,
+  is_completed BOOLEAN DEFAULT false,
+  completed_activity_id UUID REFERENCES running_activities(id) ON DELETE SET NULL,
+  completed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Running PRs
+CREATE TABLE running_prs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  activity_id UUID REFERENCES running_activities(id) ON DELETE SET NULL,
+  pr_type TEXT NOT NULL,
+  time_seconds INTEGER,
+  distance_meters REAL,
+  previous_pr_id UUID,
+  improvement_seconds INTEGER,
+  improvement_percent REAL,
+  achieved_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Heart rate zones
+CREATE TABLE heart_rate_zones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  max_heart_rate INTEGER NOT NULL,
+  resting_heart_rate INTEGER,
+  zone1_min INTEGER DEFAULT 50,
+  zone1_max INTEGER DEFAULT 60,
+  zone2_min INTEGER DEFAULT 60,
+  zone2_max INTEGER DEFAULT 70,
+  zone3_min INTEGER DEFAULT 70,
+  zone3_max INTEGER DEFAULT 80,
+  zone4_min INTEGER DEFAULT 80,
+  zone4_max INTEGER DEFAULT 90,
+  zone5_min INTEGER DEFAULT 90,
+  zone5_max INTEGER DEFAULT 100,
+  source TEXT DEFAULT 'calculated',
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- ============================================
+-- PHASE 3: NUTRITION (Apple Health + Terra)
+-- ============================================
+
+-- Nutrition summaries (synced from health sources)
+CREATE TABLE nutrition_summaries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  calories INTEGER,
+  protein REAL,
+  carbohydrates REAL,
+  fat REAL,
+  fiber REAL,
+  sugar REAL,
+  sodium REAL,
+  potassium REAL,
+  calcium REAL,
+  iron REAL,
+  vitamin_a REAL,
+  vitamin_c REAL,
+  vitamin_d REAL,
+  water_ml INTEGER,
+  caffeine_mg INTEGER,
+  source TEXT NOT NULL,
+  last_synced_at TIMESTAMP,
+  raw_data JSONB,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Nutrition goals
+CREATE TABLE nutrition_goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  goal_type TEXT NOT NULL,
+  target_calories INTEGER,
+  target_protein REAL,
+  target_carbohydrates REAL,
+  target_fat REAL,
+  target_fiber REAL,
+  target_water_ml INTEGER,
+  calculation_method TEXT,
+  tdee_estimate INTEGER,
+  activity_multiplier REAL,
+  is_active BOOLEAN DEFAULT true,
+  start_date DATE,
+  end_date DATE,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Body measurements
+CREATE TABLE body_measurements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  weight_kg REAL,
+  body_fat_percent REAL,
+  muscle_mass_kg REAL,
+  bone_mass_kg REAL,
+  water_percent REAL,
+  visceral_fat INTEGER,
+  metabolic_age INTEGER,
+  bmr INTEGER,
+  waist_cm REAL,
+  hips_cm REAL,
+  chest_cm REAL,
+  arm_cm REAL,
+  thigh_cm REAL,
+  source TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Terra API connections
+CREATE TABLE terra_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  terra_user_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  last_sync_at TIMESTAMP,
+  sync_status TEXT,
+  last_error TEXT,
+  scopes TEXT[],
+  webhook_enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- ============================================
+-- PHASE 4: SOCIAL FEATURES
+-- ============================================
+
+-- Friendships
+CREATE TABLE friendships (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  friend_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  initiated_by UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  UNIQUE(user_id, friend_id)
+);
+
+-- Activity feed
+CREATE TABLE activity_feed (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  activity_type TEXT NOT NULL,
+  workout_id UUID REFERENCES workouts(id) ON DELETE CASCADE,
+  reference_id UUID,
+  reference_type TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  metadata JSONB,
+  visibility TEXT DEFAULT 'friends',
+  likes_count INTEGER DEFAULT 0,
+  comments_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Activity likes
+CREATE TABLE activity_likes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  activity_id UUID REFERENCES activity_feed(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  UNIQUE(activity_id, user_id)
+);
+
+-- Activity comments
+CREATE TABLE activity_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  activity_id UUID REFERENCES activity_feed(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  content TEXT NOT NULL,
+  parent_comment_id UUID,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Challenges
+CREATE TABLE challenges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  creator_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  challenge_type TEXT NOT NULL,
+  target_value INTEGER NOT NULL,
+  target_unit TEXT,
+  exercise_id UUID,
+  start_date TIMESTAMP NOT NULL,
+  end_date TIMESTAMP NOT NULL,
+  visibility TEXT DEFAULT 'friends',
+  max_participants INTEGER,
+  status TEXT DEFAULT 'upcoming',
+  prize TEXT,
+  badge_id TEXT,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Challenge participants
+CREATE TABLE challenge_participants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  challenge_id UUID REFERENCES challenges(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  current_value INTEGER DEFAULT 0,
+  progress_percent INTEGER DEFAULT 0,
+  rank INTEGER,
+  status TEXT DEFAULT 'active',
+  completed_at TIMESTAMP,
+  joined_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  UNIQUE(challenge_id, user_id)
+);
+
+-- Shared workouts
+CREATE TABLE shared_workouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workout_id UUID REFERENCES workouts(id) ON DELETE CASCADE NOT NULL,
+  shared_by_user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  share_type TEXT NOT NULL,
+  visibility TEXT DEFAULT 'friends',
+  share_link TEXT UNIQUE,
+  view_count INTEGER DEFAULT 0,
+  copy_count INTEGER DEFAULT 0,
+  expires_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Notifications
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  reference_id UUID,
+  reference_type TEXT,
+  actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  is_read BOOLEAN DEFAULT false,
+  read_at TIMESTAMP,
+  action_url TEXT,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- ============================================
+-- PHASE 5: ANALYTICS & INSIGHTS
+-- ============================================
+
+-- Daily workout analytics
+CREATE TABLE daily_workout_analytics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  workout_count INTEGER DEFAULT 0,
+  total_duration_minutes INTEGER DEFAULT 0,
+  total_volume REAL DEFAULT 0,
+  total_sets INTEGER DEFAULT 0,
+  total_reps INTEGER DEFAULT 0,
+  muscle_group_breakdown JSONB,
+  exercise_count INTEGER DEFAULT 0,
+  unique_exercises INTEGER DEFAULT 0,
+  pr_count INTEGER DEFAULT 0,
+  cardio_minutes INTEGER DEFAULT 0,
+  calories_burned INTEGER,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Weekly analytics
+CREATE TABLE weekly_analytics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  week_start DATE NOT NULL,
+  year INTEGER NOT NULL,
+  week_number INTEGER NOT NULL,
+  workout_count INTEGER DEFAULT 0,
+  total_duration_minutes INTEGER DEFAULT 0,
+  avg_workout_duration REAL,
+  total_volume REAL DEFAULT 0,
+  volume_change REAL,
+  training_days INTEGER DEFAULT 0,
+  muscle_balance_score INTEGER,
+  muscle_group_breakdown JSONB,
+  pr_count INTEGER DEFAULT 0,
+  estimated_weekly_tss REAL,
+  planned_vs_completed REAL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Exercise analytics
+CREATE TABLE exercise_analytics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE NOT NULL,
+  total_sets INTEGER DEFAULT 0,
+  total_reps INTEGER DEFAULT 0,
+  total_volume REAL DEFAULT 0,
+  times_performed INTEGER DEFAULT 0,
+  current_max_1rm REAL,
+  current_max_weight REAL,
+  current_max_reps INTEGER,
+  current_max_volume REAL,
+  avg_weight REAL,
+  avg_reps REAL,
+  avg_rpe REAL,
+  weight_trend TEXT,
+  volume_trend TEXT,
+  last_30_days_volume REAL,
+  last_30_days_sets INTEGER,
+  recent_history JSONB,
+  avg_days_between_sessions REAL,
+  last_performed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Training load
+CREATE TABLE training_load (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  daily_load REAL,
+  rpe_load REAL,
+  acute_load REAL,
+  chronic_load REAL,
+  acute_chronic_ratio REAL,
+  strain_score REAL,
+  recovery_score REAL,
+  resting_hr INTEGER,
+  hrv_score REAL,
+  sleep_hours REAL,
+  sleep_quality INTEGER,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Body part volume
+CREATE TABLE body_part_volume (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  week_start DATE NOT NULL,
+  chest_sets INTEGER DEFAULT 0,
+  back_sets INTEGER DEFAULT 0,
+  shoulder_sets INTEGER DEFAULT 0,
+  bicep_sets INTEGER DEFAULT 0,
+  tricep_sets INTEGER DEFAULT 0,
+  quad_sets INTEGER DEFAULT 0,
+  hamstring_sets INTEGER DEFAULT 0,
+  glute_sets INTEGER DEFAULT 0,
+  calf_sets INTEGER DEFAULT 0,
+  ab_sets INTEGER DEFAULT 0,
+  undertrained_groups TEXT[],
+  overtrained_groups TEXT[],
+  balance_score INTEGER,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- AI insights
+CREATE TABLE ai_insights (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  insight_type TEXT NOT NULL,
+  category TEXT,
+  priority TEXT DEFAULT 'normal',
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  actionable TEXT,
+  related_exercise_id UUID REFERENCES exercises(id) ON DELETE SET NULL,
+  data_points JSONB,
+  is_read BOOLEAN DEFAULT false,
+  is_dismissed BOOLEAN DEFAULT false,
+  is_acted_on BOOLEAN DEFAULT false,
+  valid_until TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- User goals
+CREATE TABLE user_goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  goal_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  target_value REAL,
+  target_unit TEXT,
+  exercise_id UUID REFERENCES exercises(id) ON DELETE SET NULL,
+  current_value REAL,
+  start_value REAL,
+  progress_percent REAL DEFAULT 0,
+  start_date DATE,
+  target_date DATE,
+  status TEXT DEFAULT 'active',
+  completed_at TIMESTAMP,
+  predicted_completion_date DATE,
+  on_track BOOLEAN,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- ============================================
+-- PHASE 7: WEARABLE INTEGRATION
+-- ============================================
+
+-- Apple Health connections
+CREATE TABLE apple_health_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  is_connected BOOLEAN DEFAULT false,
+  last_sync_at TIMESTAMP,
+  sync_status TEXT,
+  last_error TEXT,
+  permissions JSONB,
+  sync_workouts BOOLEAN DEFAULT true,
+  sync_nutrition BOOLEAN DEFAULT true,
+  sync_sleep BOOLEAN DEFAULT true,
+  sync_heart_rate BOOLEAN DEFAULT true,
+  sync_steps BOOLEAN DEFAULT true,
+  sync_body_measurements BOOLEAN DEFAULT true,
+  device_model TEXT,
+  watch_model TEXT,
+  os_version TEXT,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Daily health metrics
+CREATE TABLE daily_health_metrics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  steps INTEGER,
+  active_minutes INTEGER,
+  active_calories INTEGER,
+  total_calories INTEGER,
+  distance_meters REAL,
+  floors_climbed INTEGER,
+  resting_heart_rate INTEGER,
+  avg_heart_rate INTEGER,
+  max_heart_rate INTEGER,
+  min_heart_rate INTEGER,
+  heart_rate_variability REAL,
+  respiratory_rate REAL,
+  oxygen_saturation REAL,
+  sleep_hours REAL,
+  sleep_quality_score INTEGER,
+  stress_level INTEGER,
+  recovery_score INTEGER,
+  body_battery INTEGER,
+  menstrual_phase TEXT,
+  source TEXT NOT NULL,
+  raw_data JSONB,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Sleep sessions
+CREATE TABLE sleep_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  start_time TIMESTAMP NOT NULL,
+  end_time TIMESTAMP NOT NULL,
+  date DATE NOT NULL,
+  total_minutes INTEGER,
+  time_in_bed INTEGER,
+  time_to_fall_asleep INTEGER,
+  awake_minutes INTEGER,
+  rem_minutes INTEGER,
+  light_minutes INTEGER,
+  deep_minutes INTEGER,
+  sleep_efficiency REAL,
+  sleep_score INTEGER,
+  awakenings INTEGER,
+  avg_heart_rate INTEGER,
+  min_heart_rate INTEGER,
+  hrv_during_sleep REAL,
+  avg_respiratory_rate REAL,
+  oxygen_saturation_avg REAL,
+  source TEXT NOT NULL,
+  external_id TEXT,
+  raw_data JSONB,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Heart rate samples
+CREATE TABLE heart_rate_samples (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  timestamp TIMESTAMP NOT NULL,
+  heart_rate INTEGER NOT NULL,
+  motion_context TEXT,
+  source TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Wearable workouts
+CREATE TABLE wearable_workouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  external_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  activity_type TEXT NOT NULL,
+  name TEXT,
+  start_time TIMESTAMP NOT NULL,
+  end_time TIMESTAMP NOT NULL,
+  duration_minutes INTEGER,
+  active_calories INTEGER,
+  total_calories INTEGER,
+  avg_heart_rate INTEGER,
+  max_heart_rate INTEGER,
+  distance_meters REAL,
+  route_polyline TEXT,
+  elevation_gain REAL,
+  raw_data JSONB,
+  linked_workout_id UUID,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Wearable sync queue
+CREATE TABLE wearable_sync_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  sync_type TEXT NOT NULL,
+  data_types TEXT[],
+  source TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  started_at TIMESTAMP,
+  completed_at TIMESTAMP,
+  error TEXT,
+  from_date TIMESTAMP,
+  to_date TIMESTAMP,
+  records_processed INTEGER,
+  records_failed INTEGER,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- ============================================
+-- PHASE 8: SYNC & OFFLINE (PowerSync)
+-- ============================================
+
+-- Sync checkpoints
+CREATE TABLE sync_checkpoints (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  bucket_name TEXT NOT NULL,
+  last_synced_at TIMESTAMP,
+  last_synced_op_id TEXT,
+  sync_version INTEGER DEFAULT 0,
+  sync_status TEXT DEFAULT 'synced',
+  last_error TEXT,
+  retry_count INTEGER DEFAULT 0,
+  device_id TEXT,
+  device_info JSONB,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Pending sync operations
+CREATE TABLE pending_sync_ops (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  op_type TEXT NOT NULL,
+  table_name TEXT NOT NULL,
+  record_id UUID NOT NULL,
+  local_data JSONB,
+  server_data JSONB,
+  merged_data JSONB,
+  has_conflict BOOLEAN DEFAULT false,
+  conflict_resolution TEXT,
+  resolved_at TIMESTAMP,
+  status TEXT DEFAULT 'pending',
+  client_timestamp TIMESTAMP,
+  server_timestamp TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Sync audit log
+CREATE TABLE sync_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  event_type TEXT NOT NULL,
+  table_name TEXT,
+  record_id UUID,
+  details JSONB,
+  error_message TEXT,
+  device_id TEXT,
+  app_version TEXT,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Device registrations
+CREATE TABLE device_registrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  device_id TEXT NOT NULL,
+  device_name TEXT,
+  device_model TEXT,
+  os_name TEXT,
+  os_version TEXT,
+  app_version TEXT,
+  push_token TEXT,
+  push_provider TEXT,
+  push_enabled BOOLEAN DEFAULT true,
+  sync_enabled BOOLEAN DEFAULT true,
+  last_active_at TIMESTAMP,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Offline queue
+CREATE TABLE offline_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  device_id TEXT NOT NULL,
+  operation_type TEXT NOT NULL,
+  table_name TEXT NOT NULL,
+  record_id UUID NOT NULL,
+  payload JSONB NOT NULL,
+  sequence_number INTEGER NOT NULL,
+  client_timestamp TIMESTAMP NOT NULL,
+  status TEXT DEFAULT 'pending',
+  processed_at TIMESTAMP,
+  error TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- ============================================
+-- PHASE 2-8 INDEXES
+-- ============================================
+
+-- Running indexes
+CREATE INDEX idx_running_activities_user_id ON running_activities(user_id);
+CREATE INDEX idx_running_activities_started_at ON running_activities(started_at);
+CREATE INDEX idx_running_programs_user_id ON running_programs(user_id);
+CREATE INDEX idx_running_prs_user_id ON running_prs(user_id);
+
+-- Nutrition indexes
+CREATE INDEX idx_nutrition_summaries_user_id ON nutrition_summaries(user_id);
+CREATE INDEX idx_nutrition_summaries_date ON nutrition_summaries(date);
+CREATE INDEX idx_body_measurements_user_id ON body_measurements(user_id);
+CREATE INDEX idx_terra_connections_user_id ON terra_connections(user_id);
+
+-- Social indexes
+CREATE INDEX idx_friendships_user_id ON friendships(user_id);
+CREATE INDEX idx_friendships_friend_id ON friendships(friend_id);
+CREATE INDEX idx_activity_feed_user_id ON activity_feed(user_id);
+CREATE INDEX idx_activity_feed_created_at ON activity_feed(created_at);
+CREATE INDEX idx_challenges_creator_id ON challenges(creator_id);
+CREATE INDEX idx_challenge_participants_challenge_id ON challenge_participants(challenge_id);
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON notifications(is_read);
+
+-- Analytics indexes
+CREATE INDEX idx_daily_workout_analytics_user_id ON daily_workout_analytics(user_id);
+CREATE INDEX idx_daily_workout_analytics_date ON daily_workout_analytics(date);
+CREATE INDEX idx_weekly_analytics_user_id ON weekly_analytics(user_id);
+CREATE INDEX idx_exercise_analytics_user_id ON exercise_analytics(user_id);
+CREATE INDEX idx_exercise_analytics_exercise_id ON exercise_analytics(exercise_id);
+CREATE INDEX idx_training_load_user_id ON training_load(user_id);
+CREATE INDEX idx_ai_insights_user_id ON ai_insights(user_id);
+CREATE INDEX idx_user_goals_user_id ON user_goals(user_id);
+
+-- Wearable indexes
+CREATE INDEX idx_daily_health_metrics_user_id ON daily_health_metrics(user_id);
+CREATE INDEX idx_daily_health_metrics_date ON daily_health_metrics(date);
+CREATE INDEX idx_sleep_sessions_user_id ON sleep_sessions(user_id);
+CREATE INDEX idx_heart_rate_samples_user_id ON heart_rate_samples(user_id);
+CREATE INDEX idx_heart_rate_samples_timestamp ON heart_rate_samples(timestamp);
+CREATE INDEX idx_wearable_workouts_user_id ON wearable_workouts(user_id);
+
+-- Sync indexes
+CREATE INDEX idx_sync_checkpoints_user_id ON sync_checkpoints(user_id);
+CREATE INDEX idx_pending_sync_ops_user_id ON pending_sync_ops(user_id);
+CREATE INDEX idx_device_registrations_user_id ON device_registrations(user_id);
+CREATE INDEX idx_offline_queue_user_id ON offline_queue(user_id);
+CREATE INDEX idx_offline_queue_status ON offline_queue(status);
+
+-- ============================================
+-- PHASE 2-8 RLS POLICIES
+-- ============================================
+
+-- Running tables
+ALTER TABLE running_activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE running_programs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE running_program_workouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE running_prs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE heart_rate_zones ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own running activities" ON running_activities
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own running programs" ON running_programs
+  FOR ALL USING (auth.uid() = user_id OR is_template = true);
+CREATE POLICY "Users can view program workouts" ON running_program_workouts
+  FOR SELECT USING (EXISTS (SELECT 1 FROM running_programs WHERE id = program_id AND (user_id = auth.uid() OR is_template = true)));
+CREATE POLICY "Users can manage own running PRs" ON running_prs
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own HR zones" ON heart_rate_zones
+  FOR ALL USING (auth.uid() = user_id);
+
+-- Nutrition tables
+ALTER TABLE nutrition_summaries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE nutrition_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE body_measurements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE terra_connections ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own nutrition" ON nutrition_summaries
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own nutrition goals" ON nutrition_goals
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own measurements" ON body_measurements
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own terra connections" ON terra_connections
+  FOR ALL USING (auth.uid() = user_id);
+
+-- Social tables
+ALTER TABLE friendships ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_feed ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE challenge_participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shared_workouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own friendships" ON friendships
+  FOR ALL USING (auth.uid() = user_id OR auth.uid() = friend_id);
+CREATE POLICY "Users can view friend activities" ON activity_feed
+  FOR SELECT USING (visibility = 'public' OR user_id = auth.uid() OR
+    EXISTS (SELECT 1 FROM friendships WHERE status = 'accepted' AND
+      ((user_id = auth.uid() AND friend_id = activity_feed.user_id) OR
+       (friend_id = auth.uid() AND user_id = activity_feed.user_id))));
+CREATE POLICY "Users can insert own activities" ON activity_feed
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can manage likes" ON activity_likes
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage comments" ON activity_comments
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view challenges" ON challenges
+  FOR SELECT USING (visibility = 'public' OR creator_id = auth.uid() OR visibility = 'friends');
+CREATE POLICY "Users can create challenges" ON challenges
+  FOR INSERT WITH CHECK (auth.uid() = creator_id);
+CREATE POLICY "Users can manage challenge participation" ON challenge_participants
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage shared workouts" ON shared_workouts
+  FOR ALL USING (auth.uid() = shared_by_user_id);
+CREATE POLICY "Users can manage own notifications" ON notifications
+  FOR ALL USING (auth.uid() = user_id);
+
+-- Analytics tables
+ALTER TABLE daily_workout_analytics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weekly_analytics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE exercise_analytics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE training_load ENABLE ROW LEVEL SECURITY;
+ALTER TABLE body_part_volume ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_insights ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_goals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own daily analytics" ON daily_workout_analytics
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own weekly analytics" ON weekly_analytics
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own exercise analytics" ON exercise_analytics
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own training load" ON training_load
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own body part volume" ON body_part_volume
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own insights" ON ai_insights
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own goals" ON user_goals
+  FOR ALL USING (auth.uid() = user_id);
+
+-- Wearable tables
+ALTER TABLE apple_health_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_health_metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sleep_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE heart_rate_samples ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wearable_workouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wearable_sync_queue ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own apple health" ON apple_health_connections
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own health metrics" ON daily_health_metrics
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own sleep" ON sleep_sessions
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own HR samples" ON heart_rate_samples
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own wearable workouts" ON wearable_workouts
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own sync queue" ON wearable_sync_queue
+  FOR ALL USING (auth.uid() = user_id);
+
+-- Sync tables
+ALTER TABLE sync_checkpoints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_sync_ops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sync_audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_registrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE offline_queue ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own sync checkpoints" ON sync_checkpoints
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own sync ops" ON pending_sync_ops
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own sync log" ON sync_audit_log
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own devices" ON device_registrations
+  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own offline queue" ON offline_queue
+  FOR ALL USING (auth.uid() = user_id);
+
+-- ============================================
+-- PHASE 2-8 TRIGGERS
+-- ============================================
+
+CREATE TRIGGER update_running_activities_updated_at
+  BEFORE UPDATE ON running_activities
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_running_programs_updated_at
+  BEFORE UPDATE ON running_programs
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_heart_rate_zones_updated_at
+  BEFORE UPDATE ON heart_rate_zones
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_nutrition_summaries_updated_at
+  BEFORE UPDATE ON nutrition_summaries
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_nutrition_goals_updated_at
+  BEFORE UPDATE ON nutrition_goals
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_terra_connections_updated_at
+  BEFORE UPDATE ON terra_connections
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_friendships_updated_at
+  BEFORE UPDATE ON friendships
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_activity_comments_updated_at
+  BEFORE UPDATE ON activity_comments
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_challenges_updated_at
+  BEFORE UPDATE ON challenges
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_challenge_participants_updated_at
+  BEFORE UPDATE ON challenge_participants
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_daily_workout_analytics_updated_at
+  BEFORE UPDATE ON daily_workout_analytics
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_exercise_analytics_updated_at
+  BEFORE UPDATE ON exercise_analytics
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_goals_updated_at
+  BEFORE UPDATE ON user_goals
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_apple_health_connections_updated_at
+  BEFORE UPDATE ON apple_health_connections
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_daily_health_metrics_updated_at
+  BEFORE UPDATE ON daily_health_metrics
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_sync_checkpoints_updated_at
+  BEFORE UPDATE ON sync_checkpoints
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_device_registrations_updated_at
+  BEFORE UPDATE ON device_registrations
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

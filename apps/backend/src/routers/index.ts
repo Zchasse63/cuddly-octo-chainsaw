@@ -13,6 +13,12 @@ import { searchRouter } from './search';
 import { conversationsRouter } from './conversations';
 import { substitutionsRouter } from './substitutions';
 import { knowledgeRouter } from './knowledge';
+import { runningRouter } from './running';
+import { nutritionRouter } from './nutrition';
+import { socialRouter } from './social';
+import { analyticsRouter } from './analytics';
+import { wearablesRouter } from './wearables';
+import { devicesRouter } from './devices';
 
 export const appRouter = router({
   auth: authRouter,
@@ -29,6 +35,12 @@ export const appRouter = router({
   conversations: conversationsRouter,
   substitutions: substitutionsRouter,
   knowledge: knowledgeRouter,
+  running: runningRouter,
+  nutrition: nutritionRouter,
+  social: socialRouter,
+  analytics: analyticsRouter,
+  wearables: wearablesRouter,
+  devices: devicesRouter,
 });
 
 // Export type for client
