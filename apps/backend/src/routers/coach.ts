@@ -9,10 +9,166 @@ import {
   rankExerciseSwaps,
 } from '../services/aiCoach';
 import { createRagCoach } from '../services/aiCoachRag';
-import { userProfiles, exercises, personalRecords, conversations, messages } from '../db/schema';
+import { createUnifiedCoach, type UserContext, type CoachMessage } from '../services/unifiedCoach';
+import {
+  userProfiles,
+  exercises,
+  personalRecords,
+  conversations,
+  messages,
+  workouts,
+} from '../db/schema';
 import { eq, desc, and } from 'drizzle-orm';
 
 export const coachRouter = router({
+  // ============================================
+  // UNIFIED COACH - Main Entry Point
+  // ============================================
+
+  /**
+   * Main message endpoint - handles ALL chat interactions
+   * This is the primary endpoint the chat UI should use
+   */
+  message: protectedProcedure
+    .input(
+      z.object({
+        content: z.string().min(1),
+        conversationId: z.string().uuid().optional(),
+        // Session context for workout logging
+        activeWorkoutId: z.string().uuid().optional(),
+        currentExerciseId: z.string().uuid().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const coach = createUnifiedCoach(ctx.db);
+
+      // Build user context
+      const context = await buildUserContext(ctx, input);
+
+      // Process message through unified coach
+      const response = await coach.processMessage(input.content, context);
+
+      // Save to conversation history if we have a conversation
+      if (input.conversationId) {
+        await ctx.db.insert(messages).values({
+          conversationId: input.conversationId,
+          userId: ctx.user.id,
+          role: 'user',
+          content: input.content,
+          metadata: { intent: response.intent },
+        });
+
+        await ctx.db.insert(messages).values({
+          conversationId: input.conversationId,
+          userId: ctx.user.id,
+          role: 'assistant',
+          content: response.message,
+          metadata: {
+            intent: response.intent,
+            workoutLogged: response.workoutLogged,
+            sources: response.sources?.map((s) => s.title),
+          },
+        });
+
+        // Update conversation timestamp
+        await ctx.db
+          .update(conversations)
+          .set({ updatedAt: new Date() })
+          .where(eq(conversations.id, input.conversationId));
+      }
+
+      return response;
+    }),
+
+  /**
+   * Streaming message endpoint - for real-time chat UI
+   */
+  streamMessage: protectedProcedure
+    .input(
+      z.object({
+        content: z.string().min(1),
+        activeWorkoutId: z.string().uuid().optional(),
+        currentExerciseId: z.string().uuid().optional(),
+      })
+    )
+    .subscription(async function* ({ ctx, input }) {
+      const coach = createUnifiedCoach(ctx.db);
+      const context = await buildUserContext(ctx, input);
+
+      for await (const result of coach.streamMessage(input.content, context)) {
+        if (result.chunk) {
+          yield { type: 'chunk' as const, data: result.chunk };
+        }
+        if (result.final) {
+          yield { type: 'final' as const, data: result.final };
+        }
+      }
+    }),
+
+  /**
+   * Start a workout session - returns workout ID for context
+   */
+  startWorkout: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [workout] = await ctx.db
+        .insert(workouts)
+        .values({
+          userId: ctx.user.id,
+          name: input.name || `Workout ${new Date().toLocaleDateString()}`,
+          status: 'active',
+          startedAt: new Date(),
+        })
+        .returning();
+
+      return {
+        workoutId: workout.id,
+        message: `Workout started! What exercise are we doing first?`,
+      };
+    }),
+
+  /**
+   * End workout session
+   */
+  endWorkout: protectedProcedure
+    .input(z.object({ workoutId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [workout] = await ctx.db
+        .update(workouts)
+        .set({
+          status: 'completed',
+          completedAt: new Date(),
+        })
+        .where(
+          and(eq(workouts.id, input.workoutId), eq(workouts.userId, ctx.user.id))
+        )
+        .returning();
+
+      if (!workout) {
+        throw new Error('Workout not found');
+      }
+
+      // Calculate duration
+      const duration = workout.startedAt
+        ? Math.round(
+            (new Date().getTime() - new Date(workout.startedAt).getTime()) / 60000
+          )
+        : 0;
+
+      return {
+        message: `Great workout! ${duration} minutes. See you next time!`,
+        duration,
+      };
+    }),
+
+  // ============================================
+  // LEGACY ENDPOINTS (for backwards compatibility)
+  // ============================================
+
   // Classify a message
   classify: protectedProcedure
     .input(z.object({ message: z.string() }))
@@ -415,3 +571,75 @@ export const coachRouter = router({
       return { success: true };
     }),
 });
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Build user context for the unified coach
+ */
+async function buildUserContext(
+  ctx: { db: any; user: { id: string } },
+  input: {
+    activeWorkoutId?: string;
+    currentExerciseId?: string;
+    conversationId?: string;
+  }
+): Promise<UserContext> {
+  // Get user profile
+  const profile = await ctx.db.query.userProfiles.findFirst({
+    where: eq(userProfiles.userId, ctx.user.id),
+  });
+
+  // Get recent PRs
+  const recentPrs = await ctx.db.query.personalRecords.findMany({
+    where: eq(personalRecords.userId, ctx.user.id),
+    orderBy: [desc(personalRecords.achievedAt)],
+    limit: 5,
+    with: { exercise: true },
+  });
+
+  // Get current exercise if provided
+  let currentExercise: string | undefined;
+  if (input.currentExerciseId) {
+    const exercise = await ctx.db.query.exercises.findFirst({
+      where: eq(exercises.id, input.currentExerciseId),
+    });
+    currentExercise = exercise?.name;
+  }
+
+  // Get conversation history if conversation exists
+  let conversationHistory: CoachMessage[] | undefined;
+  if (input.conversationId) {
+    const msgs = await ctx.db.query.messages.findMany({
+      where: eq(messages.conversationId, input.conversationId),
+      orderBy: [desc(messages.createdAt)],
+      limit: 10,
+    });
+    conversationHistory = msgs.reverse().map((m: any) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+      metadata: m.metadata,
+    }));
+  }
+
+  return {
+    userId: ctx.user.id,
+    name: profile?.name || undefined,
+    experienceLevel: profile?.experienceLevel || undefined,
+    goals: profile?.goals || undefined,
+    injuries: profile?.injuries ? [profile.injuries] : undefined,
+    preferredEquipment: profile?.preferredEquipment || undefined,
+    preferredWeightUnit: (profile?.preferredWeightUnit as 'lbs' | 'kg') || 'lbs',
+    activeWorkoutId: input.activeWorkoutId,
+    currentExercise,
+    currentExerciseId: input.currentExerciseId,
+    recentPrs: recentPrs.map((pr: any) => ({
+      exercise: pr.exercise?.name || 'Unknown',
+      weight: pr.weight,
+      reps: pr.reps,
+    })),
+    conversationHistory,
+  };
+}
