@@ -49,3 +49,6 @@ export * from './sync';
 
 // CrossFit schemas
 export * from './crossfit';
+
+// Training programs & calendar schemas
+export * from './programs';

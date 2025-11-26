@@ -1859,3 +1859,486 @@ CREATE POLICY "Users can delete their own WOD benchmarks"
 CREATE TRIGGER update_wod_benchmarks_updated_at
   BEFORE UPDATE ON wod_benchmarks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TRAINING PROGRAMS & CALENDAR
+-- ============================================
+
+-- Training type preference enum
+CREATE TYPE training_type_preference AS ENUM (
+  'strength_only',
+  'running_only',
+  'hybrid',
+  'crossfit',
+  'undecided'
+);
+
+-- Primary goal enum
+CREATE TYPE primary_goal AS ENUM (
+  'build_muscle',
+  'lose_fat',
+  'get_stronger',
+  'improve_endurance',
+  'run_5k',
+  'run_10k',
+  'run_half_marathon',
+  'run_marathon',
+  'general_fitness',
+  'sport_performance',
+  'body_recomposition'
+);
+
+-- Program type enum
+CREATE TYPE program_type AS ENUM (
+  'strength',
+  'running',
+  'hybrid',
+  'crossfit',
+  'custom'
+);
+
+-- Program status enum
+CREATE TYPE program_status AS ENUM (
+  'draft',
+  'active',
+  'paused',
+  'completed',
+  'cancelled'
+);
+
+-- Workout type enum for program days
+CREATE TYPE workout_type AS ENUM (
+  'push',
+  'pull',
+  'legs',
+  'upper',
+  'lower',
+  'full_body',
+  'chest_back',
+  'shoulders_arms',
+  'easy_run',
+  'tempo_run',
+  'interval_run',
+  'long_run',
+  'recovery',
+  'rest',
+  'crossfit',
+  'custom'
+);
+
+-- Program questionnaire (premium feature)
+CREATE TABLE program_questionnaire (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+
+  -- Training type & goals
+  training_type training_type_preference NOT NULL,
+  primary_goal primary_goal NOT NULL,
+  secondary_goals TEXT[],
+
+  -- Specific targets
+  target_weight REAL,
+  target_weight_unit TEXT DEFAULT 'lbs',
+  target_body_fat_percent REAL,
+
+  -- Running targets
+  target_race_distance TEXT,
+  target_race_time INTEGER,
+  target_race_date TIMESTAMP,
+  current_pace REAL,
+
+  -- Strength targets
+  target_bench_press REAL,
+  target_squat REAL,
+  target_deadlift REAL,
+
+  -- Availability
+  days_per_week INTEGER NOT NULL,
+  preferred_days INTEGER[],
+  session_duration INTEGER NOT NULL,
+  preferred_time_of_day TEXT,
+
+  -- Experience
+  experience_level TEXT NOT NULL,
+  years_training REAL,
+
+  -- Strength background
+  has_strength_experience BOOLEAN DEFAULT false,
+  current_bench_press REAL,
+  current_squat REAL,
+  current_deadlift REAL,
+
+  -- Running background
+  has_running_experience BOOLEAN DEFAULT false,
+  weekly_mileage REAL,
+  longest_run REAL,
+  recent_race_time INTEGER,
+  recent_race_distance TEXT,
+
+  -- Equipment
+  training_location TEXT,
+  available_equipment TEXT[],
+  has_cardio_equipment BOOLEAN DEFAULT false,
+  cardio_equipment TEXT[],
+
+  -- Running environment
+  running_environment TEXT,
+  has_gps_watch BOOLEAN DEFAULT false,
+  has_heart_rate_monitor BOOLEAN DEFAULT false,
+
+  -- Health
+  current_injuries TEXT[],
+  past_injuries TEXT[],
+  exercises_to_avoid TEXT[],
+  health_conditions TEXT[],
+  mobility_limitations TEXT,
+
+  -- Preferences
+  favorite_exercises TEXT[],
+  disliked_exercises TEXT[],
+  preferred_rep_ranges TEXT,
+  preferred_split TEXT,
+  preferred_run_types TEXT[],
+
+  -- Lifestyle
+  sleep_hours REAL,
+  stress_level TEXT,
+  nutrition_tracking BOOLEAN DEFAULT false,
+  supplements_used TEXT[],
+
+  -- Program preferences
+  program_duration INTEGER,
+  wants_deload_weeks BOOLEAN DEFAULT true,
+  deload_frequency INTEGER,
+  wants_progressive_overload BOOLEAN DEFAULT true,
+  wants_variety BOOLEAN DEFAULT true,
+
+  -- Additional context
+  additional_notes TEXT,
+  previous_programs_used TEXT[],
+  what_worked TEXT,
+  what_didnt_work TEXT,
+
+  -- Metadata
+  is_premium BOOLEAN DEFAULT false,
+  version INTEGER DEFAULT 1,
+  completed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Training programs
+CREATE TABLE training_programs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+
+  -- Program info
+  name TEXT NOT NULL,
+  description TEXT,
+  program_type program_type NOT NULL,
+
+  -- Duration
+  duration_weeks INTEGER NOT NULL,
+  days_per_week INTEGER NOT NULL,
+
+  -- Goals & context
+  primary_goal TEXT,
+  secondary_goals TEXT[],
+  target_event TEXT,
+  target_date DATE,
+
+  -- Generation context
+  questionnaire_responses JSONB,
+  generation_prompt JSONB,
+  ai_model TEXT,
+  rag_sources TEXT[],
+
+  -- Status & progress
+  status program_status DEFAULT 'draft',
+  current_week INTEGER DEFAULT 1,
+  current_day INTEGER DEFAULT 1,
+  start_date DATE,
+  end_date DATE,
+  completed_at TIMESTAMP,
+
+  -- Adherence tracking
+  total_workouts_scheduled INTEGER DEFAULT 0,
+  total_workouts_completed INTEGER DEFAULT 0,
+  adherence_percent REAL,
+
+  -- Premium feature flag
+  is_premium BOOLEAN DEFAULT true,
+
+  -- Template options
+  is_template BOOLEAN DEFAULT false,
+  is_public BOOLEAN DEFAULT false,
+  template_source UUID,
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Program weeks
+CREATE TABLE program_weeks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  program_id UUID REFERENCES training_programs(id) ON DELETE CASCADE NOT NULL,
+
+  week_number INTEGER NOT NULL,
+  name TEXT,
+  focus TEXT,
+  description TEXT,
+
+  -- Targets for the week
+  target_volume INTEGER,
+  target_mileage REAL,
+  intensity_level TEXT,
+
+  -- Status
+  is_completed BOOLEAN DEFAULT false,
+  completed_at TIMESTAMP,
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Program days
+CREATE TABLE program_days (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  program_id UUID REFERENCES training_programs(id) ON DELETE CASCADE NOT NULL,
+  week_id UUID REFERENCES program_weeks(id) ON DELETE CASCADE NOT NULL,
+
+  -- Schedule
+  week_number INTEGER NOT NULL,
+  day_of_week INTEGER NOT NULL,
+  day_number INTEGER NOT NULL,
+
+  -- Workout info
+  workout_type workout_type NOT NULL,
+  name TEXT,
+  description TEXT,
+  estimated_duration INTEGER,
+
+  -- For running days
+  target_distance_meters REAL,
+  target_duration_seconds INTEGER,
+  target_pace TEXT,
+  intervals JSONB,
+
+  -- Notes
+  coach_notes TEXT,
+  warmup_notes TEXT,
+  cooldown_notes TEXT,
+
+  -- Completion tracking
+  is_completed BOOLEAN DEFAULT false,
+  completed_workout_id UUID REFERENCES workouts(id) ON DELETE SET NULL,
+  completed_run_id UUID REFERENCES running_activities(id) ON DELETE SET NULL,
+  completed_at TIMESTAMP,
+  scheduled_date DATE,
+
+  order_in_day INTEGER DEFAULT 1,
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Program exercises
+CREATE TABLE program_exercises (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  program_day_id UUID REFERENCES program_days(id) ON DELETE CASCADE NOT NULL,
+  exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE NOT NULL,
+
+  -- Order
+  exercise_order INTEGER NOT NULL,
+
+  -- Prescription
+  sets INTEGER NOT NULL,
+  reps_min INTEGER,
+  reps_max INTEGER,
+  reps_target TEXT,
+  rpe_target REAL,
+  percentage_of_1rm REAL,
+  rest_seconds INTEGER,
+
+  -- Tempo
+  tempo TEXT,
+
+  -- Notes
+  notes TEXT,
+  substitute_exercise_ids UUID[],
+
+  -- Superset
+  superset_group INTEGER,
+  superset_order INTEGER,
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Training calendar
+CREATE TABLE training_calendar (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+
+  -- Date
+  scheduled_date DATE NOT NULL,
+
+  -- Activity type
+  activity_type TEXT NOT NULL,
+
+  -- References
+  program_id UUID REFERENCES training_programs(id) ON DELETE CASCADE,
+  program_day_id UUID REFERENCES program_days(id) ON DELETE CASCADE,
+  workout_id UUID REFERENCES workouts(id) ON DELETE SET NULL,
+  running_activity_id UUID REFERENCES running_activities(id) ON DELETE SET NULL,
+
+  -- Display info
+  title TEXT NOT NULL,
+  description TEXT,
+  workout_type TEXT,
+  estimated_duration INTEGER,
+
+  -- Status
+  status TEXT DEFAULT 'scheduled',
+  completed_at TIMESTAMP,
+
+  -- Notes
+  user_notes TEXT,
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Program adherence
+CREATE TABLE program_adherence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  program_id UUID REFERENCES training_programs(id) ON DELETE CASCADE NOT NULL,
+  program_day_id UUID REFERENCES program_days(id) ON DELETE CASCADE NOT NULL,
+
+  scheduled_date DATE NOT NULL,
+
+  -- Status
+  status TEXT DEFAULT 'pending',
+
+  -- Completion metrics
+  completion_percent REAL,
+  exercises_completed INTEGER,
+  exercises_scheduled INTEGER,
+
+  -- Rescheduling
+  rescheduled_to DATE,
+  rescheduled_from DATE,
+
+  -- Notes
+  skip_reason TEXT,
+  notes TEXT,
+
+  completed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- ============================================
+-- TRAINING PROGRAMS INDEXES
+-- ============================================
+
+CREATE INDEX idx_program_questionnaire_user_id ON program_questionnaire(user_id);
+CREATE INDEX idx_training_programs_user_id ON training_programs(user_id);
+CREATE INDEX idx_training_programs_status ON training_programs(status);
+CREATE INDEX idx_program_weeks_program_id ON program_weeks(program_id);
+CREATE INDEX idx_program_days_program_id ON program_days(program_id);
+CREATE INDEX idx_program_days_week_id ON program_days(week_id);
+CREATE INDEX idx_program_exercises_program_day_id ON program_exercises(program_day_id);
+CREATE INDEX idx_training_calendar_user_id ON training_calendar(user_id);
+CREATE INDEX idx_training_calendar_scheduled_date ON training_calendar(scheduled_date);
+CREATE INDEX idx_training_calendar_program_id ON training_calendar(program_id);
+CREATE INDEX idx_program_adherence_user_id ON program_adherence(user_id);
+CREATE INDEX idx_program_adherence_program_id ON program_adherence(program_id);
+
+-- ============================================
+-- TRAINING PROGRAMS RLS POLICIES
+-- ============================================
+
+ALTER TABLE program_questionnaire ENABLE ROW LEVEL SECURITY;
+ALTER TABLE training_programs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE program_weeks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE program_days ENABLE ROW LEVEL SECURITY;
+ALTER TABLE program_exercises ENABLE ROW LEVEL SECURITY;
+ALTER TABLE training_calendar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE program_adherence ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own questionnaire"
+  ON program_questionnaire FOR ALL
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can manage own programs"
+  ON training_programs FOR ALL
+  USING (auth.uid() = user_id OR (is_template = true AND is_public = true));
+
+CREATE POLICY "Users can view program weeks"
+  ON program_weeks FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM training_programs
+    WHERE id = program_weeks.program_id
+    AND (user_id = auth.uid() OR (is_template = true AND is_public = true))
+  ));
+
+CREATE POLICY "Users can manage own program weeks"
+  ON program_weeks FOR ALL
+  USING (EXISTS (
+    SELECT 1 FROM training_programs
+    WHERE id = program_weeks.program_id AND user_id = auth.uid()
+  ));
+
+CREATE POLICY "Users can view program days"
+  ON program_days FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM training_programs
+    WHERE id = program_days.program_id
+    AND (user_id = auth.uid() OR (is_template = true AND is_public = true))
+  ));
+
+CREATE POLICY "Users can manage own program days"
+  ON program_days FOR ALL
+  USING (EXISTS (
+    SELECT 1 FROM training_programs
+    WHERE id = program_days.program_id AND user_id = auth.uid()
+  ));
+
+CREATE POLICY "Users can view program exercises"
+  ON program_exercises FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM program_days pd
+    JOIN training_programs tp ON tp.id = pd.program_id
+    WHERE pd.id = program_exercises.program_day_id
+    AND (tp.user_id = auth.uid() OR (tp.is_template = true AND tp.is_public = true))
+  ));
+
+CREATE POLICY "Users can manage own program exercises"
+  ON program_exercises FOR ALL
+  USING (EXISTS (
+    SELECT 1 FROM program_days pd
+    JOIN training_programs tp ON tp.id = pd.program_id
+    WHERE pd.id = program_exercises.program_day_id AND tp.user_id = auth.uid()
+  ));
+
+CREATE POLICY "Users can manage own calendar"
+  ON training_calendar FOR ALL
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can manage own adherence"
+  ON program_adherence FOR ALL
+  USING (auth.uid() = user_id);
+
+-- ============================================
+-- TRAINING PROGRAMS TRIGGERS
+-- ============================================
+
+CREATE TRIGGER update_program_questionnaire_updated_at
+  BEFORE UPDATE ON program_questionnaire
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_training_programs_updated_at
+  BEFORE UPDATE ON training_programs
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_training_calendar_updated_at
+  BEFORE UPDATE ON training_calendar
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
