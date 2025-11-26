@@ -7,14 +7,51 @@
 
 ---
 
+## Tech Stack Summary
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| **API** | tRPC v11 | Type-safe API layer |
+| **ORM** | Drizzle | TypeScript ORM for Supabase |
+| **Database** | Supabase PostgreSQL | Primary data store |
+| **Search** | Upstash Search | Hybrid semantic + keyword search |
+| **Cache** | Upstash Redis | Caching, rate limiting |
+| **AI/LLM** | OpenAI SDK (Grok) | Voice parsing, AI coach |
+| **Offline** | PowerSync | Offline-first sync |
+| **Mobile** | Expo SDK 53 + Expo Router | React Native app |
+| **Web** | Next.js 14 | Dashboard & web app |
+
+---
+
 ## Phase 1: Database Foundation & Core Schema (Week 1-2)
 
-### 1.1 Enable pgvector Extension
+### 1.1 Upstash Setup
 
-```sql
--- Enable in Supabase SQL Editor
-CREATE EXTENSION IF NOT EXISTS vector;
+#### Upstash Search (Hybrid Search)
+```typescript
+// apps/backend/src/lib/upstash.ts
+import { Search } from '@upstash/search';
+import { Redis } from '@upstash/redis';
+
+export const search = new Search({
+  url: process.env.UPSTASH_SEARCH_REST_URL!,
+  token: process.env.UPSTASH_SEARCH_REST_TOKEN!,
+});
+
+export const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 ```
+
+#### Upstash Search Indexes (Namespaces)
+Create the following indexes in Upstash Search dashboard:
+
+| Index Name | Purpose | Fields |
+|------------|---------|--------|
+| `exercises` | Exercise matching | name, synonyms, description, muscle_group |
+| `exercise_cues` | Coaching cues retrieval | cue_text, exercise_name, cue_type |
+| `knowledge_base` | RAG for AI coach | content, title, category, tags |
 
 ### 1.2 New Database Tables
 
@@ -71,17 +108,13 @@ CREATE TABLE badge_definitions (
 #### Enhanced Exercise Database (5 tables)
 
 ```sql
--- Update exercises table with vector support
+-- Update exercises table (no embedding - that's in Upstash Search)
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS normalized_name TEXT;
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS phonetic_key TEXT;
-ALTER TABLE exercises ADD COLUMN IF NOT EXISTS search_vector TSVECTOR;
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS base_movement TEXT;
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS parent_exercise_id UUID REFERENCES exercises(id) ON DELETE SET NULL;
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS progression_order INTEGER;
-
--- Change embedding to proper vector type
-ALTER TABLE exercises DROP COLUMN IF EXISTS embedding;
-ALTER TABLE exercises ADD COLUMN embedding VECTOR(1536);
+ALTER TABLE exercises ADD COLUMN IF NOT EXISTS upstash_indexed BOOLEAN DEFAULT false;
 
 -- Exercise muscles (many-to-many)
 CREATE TABLE exercise_muscles (
@@ -91,13 +124,13 @@ CREATE TABLE exercise_muscles (
   PRIMARY KEY (exercise_id, muscle_group)
 );
 
--- Exercise cues for coaching
+-- Exercise cues for coaching (content indexed in Upstash Search)
 CREATE TABLE exercise_cues (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE NOT NULL,
   cue_text TEXT NOT NULL,
   cue_type TEXT NOT NULL, -- 'setup', 'execution', 'breathing', 'common_mistake'
-  embedding VECTOR(1536),
+  upstash_indexed BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
@@ -152,7 +185,11 @@ CREATE TABLE voice_commands (
   -- Parsing results
   parsed_output JSONB, -- { exercise, sets, reps, weight, rpe }
   confidence REAL, -- 0-1 parsing confidence
-  model_used TEXT, -- 'grok-4', 'fine-tuned-v1'
+  model_used TEXT, -- 'grok-2', 'fine-tuned-v1'
+
+  -- Search results from Upstash
+  search_results JSONB, -- top matches from Upstash Search
+  search_latency_ms INTEGER,
 
   -- Correction tracking (for fine-tuning)
   was_corrected BOOLEAN DEFAULT false,
@@ -178,7 +215,7 @@ CREATE TABLE fine_tuned_models (
   created_at TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
--- RAG knowledge base
+-- RAG knowledge base (content indexed in Upstash Search)
 CREATE TABLE knowledge_base (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   chunk_id TEXT UNIQUE NOT NULL,
@@ -186,10 +223,10 @@ CREATE TABLE knowledge_base (
   category TEXT, -- 'strength', 'running', 'mobility', 'injury'
   title TEXT,
   content TEXT NOT NULL,
-  embedding VECTOR(1536),
   tags TEXT[],
   metadata JSONB,
   source TEXT, -- 'internal', 'article_url'
+  upstash_indexed BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW() NOT NULL
 );
 ```
@@ -253,7 +290,94 @@ CREATE TABLE messages (
 );
 ```
 
-### 1.3 Drizzle Schema Files
+### 1.3 Upstash Search Indexing Service
+
+```typescript
+// apps/backend/src/services/search-indexer.ts
+import { search } from '../lib/upstash';
+import { db } from '../db';
+import { exercises, exerciseCues, knowledgeBase } from '../db/schema';
+import { eq } from 'drizzle-orm';
+
+// Index exercises to Upstash Search
+export async function indexExercises() {
+  const unindexed = await db.query.exercises.findMany({
+    where: eq(exercises.upstashIndexed, false),
+  });
+
+  for (const exercise of unindexed) {
+    await search.upsert({
+      index: 'exercises',
+      id: exercise.id,
+      data: {
+        name: exercise.name,
+        normalized_name: exercise.normalizedName,
+        synonyms: exercise.synonyms?.join(' ') || '',
+        description: exercise.description || '',
+        primary_muscle: exercise.primaryMuscle,
+        equipment: exercise.equipment?.join(' ') || '',
+        movement_pattern: exercise.movementPattern || '',
+      },
+    });
+
+    await db.update(exercises)
+      .set({ upstashIndexed: true })
+      .where(eq(exercises.id, exercise.id));
+  }
+}
+
+// Index exercise cues for RAG
+export async function indexExerciseCues() {
+  const unindexed = await db.query.exerciseCues.findMany({
+    where: eq(exerciseCues.upstashIndexed, false),
+    with: { exercise: true },
+  });
+
+  for (const cue of unindexed) {
+    await search.upsert({
+      index: 'exercise_cues',
+      id: cue.id,
+      data: {
+        cue_text: cue.cueText,
+        cue_type: cue.cueType,
+        exercise_name: cue.exercise.name,
+        exercise_id: cue.exerciseId,
+      },
+    });
+
+    await db.update(exerciseCues)
+      .set({ upstashIndexed: true })
+      .where(eq(exerciseCues.id, cue.id));
+  }
+}
+
+// Index knowledge base for RAG
+export async function indexKnowledgeBase() {
+  const unindexed = await db.query.knowledgeBase.findMany({
+    where: eq(knowledgeBase.upstashIndexed, false),
+  });
+
+  for (const chunk of unindexed) {
+    await search.upsert({
+      index: 'knowledge_base',
+      id: chunk.id,
+      data: {
+        title: chunk.title || '',
+        content: chunk.content,
+        category: chunk.category || '',
+        chunk_type: chunk.chunkType,
+        tags: chunk.tags?.join(' ') || '',
+      },
+    });
+
+    await db.update(knowledgeBase)
+      .set({ upstashIndexed: true })
+      .where(eq(knowledgeBase.id, chunk.id));
+  }
+}
+```
+
+### 1.4 Drizzle Schema Files
 
 Create new schema files in `apps/backend/src/db/schema/`:
 
@@ -265,15 +389,91 @@ Create new schema files in `apps/backend/src/db/schema/`:
 - `conversations.ts` - conversations, messages
 - `pr-history.ts` - pr_history
 
-### 1.4 New tRPC Routers
+### 1.5 New tRPC Routers
 
 - `onboarding.ts` - Onboarding flow management
 - `badges.ts` - Achievement system
 - `streaks.ts` - Streak tracking
 - `voice-commands.ts` - Voice command history & analytics
-- `knowledge.ts` - RAG queries
+- `knowledge.ts` - RAG queries via Upstash Search
 - `conversations.ts` - AI chat management
 - `substitutions.ts` - Exercise substitution suggestions
+- `search.ts` - Upstash Search queries
+
+### 1.6 Exercise Matcher Service
+
+```typescript
+// apps/backend/src/services/exercise-matcher.ts
+import { search, redis } from '../lib/upstash';
+
+interface MatchResult {
+  exerciseId: string;
+  exerciseName: string;
+  confidence: number;
+  matchType: 'semantic' | 'keyword' | 'hybrid';
+}
+
+export async function matchExercise(input: string): Promise<MatchResult[]> {
+  // Check cache first
+  const cacheKey = `exercise:${input.toLowerCase().trim()}`;
+  const cached = await redis.get<MatchResult[]>(cacheKey);
+  if (cached) return cached;
+
+  // Query Upstash Search (hybrid: semantic + keyword)
+  const results = await search.query({
+    index: 'exercises',
+    query: input,
+    topK: 5,
+  });
+
+  const matches: MatchResult[] = results.map((r) => ({
+    exerciseId: r.id,
+    exerciseName: r.data.name as string,
+    confidence: r.score,
+    matchType: 'hybrid',
+  }));
+
+  // Cache for 1 hour
+  await redis.set(cacheKey, matches, { ex: 3600 });
+
+  return matches;
+}
+
+// RAG: Get relevant cues for an exercise
+export async function getExerciseCues(exerciseId: string, query?: string) {
+  const searchQuery = query || 'form tips common mistakes';
+
+  const results = await search.query({
+    index: 'exercise_cues',
+    query: searchQuery,
+    filter: `exercise_id = "${exerciseId}"`,
+    topK: 5,
+  });
+
+  return results.map((r) => ({
+    cueText: r.data.cue_text,
+    cueType: r.data.cue_type,
+  }));
+}
+
+// RAG: Get knowledge for AI coach
+export async function getRelevantKnowledge(query: string, category?: string) {
+  const filter = category ? `category = "${category}"` : undefined;
+
+  const results = await search.query({
+    index: 'knowledge_base',
+    query,
+    filter,
+    topK: 5,
+  });
+
+  return results.map((r) => ({
+    title: r.data.title,
+    content: r.data.content,
+    category: r.data.category,
+  }));
+}
+```
 
 ---
 
@@ -961,115 +1161,323 @@ CREATE TABLE wod_benchmarks (
 
 ## Phase 7: Offline Support & Sync (Week 12-13)
 
-### 7.1 Technology Choice
+### 7.1 Technology: PowerSync
 
-**WatermelonDB** for React Native offline-first database
+**PowerSync** - Built for Supabase, automatic bi-directional sync
 
-### 7.2 Implementation
+### 7.2 PowerSync Setup
 
-1. **WatermelonDB Setup**
-   - Install and configure
-   - Define models matching Supabase schema
-   - Set up sync adapter
+```typescript
+// apps/mobile/src/lib/powersync.ts
+import { PowerSyncDatabase } from '@powersync/react-native';
+import { SupabaseConnector } from '@powersync/supabase';
+import { AppSchema } from './powersync-schema';
 
-2. **Sync Architecture**
-   ```
-   ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-   │   Mobile    │  sync   │   tRPC      │  sync   │  Supabase   │
-   │ WatermelonDB│◄───────►│  Backend    │◄───────►│  PostgreSQL │
-   └─────────────┘         └─────────────┘         └─────────────┘
-   ```
+export const db = new PowerSyncDatabase({
+  schema: AppSchema,
+  database: { dbFilename: 'voicefit.db' },
+});
 
-3. **Sync Tables** (priority order)
-   - workout_sets (most critical)
-   - workouts
-   - voice_commands
-   - exercises (read-only cache)
-   - user_profiles
+export const connector = new SupabaseConnector({
+  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL!,
+  supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+  powerSync: db,
+});
 
-4. **Conflict Resolution**
-   - Last-write-wins for most data
-   - Merge for workout_sets (append)
-   - Server-authoritative for exercises
+export async function initPowerSync() {
+  await db.init();
+  await db.connect(connector);
+}
+```
 
-### 7.3 New tRPC Endpoints
+### 7.3 PowerSync Schema
 
-- `sync.pull` - Get changes since timestamp
-- `sync.push` - Push local changes
-- `sync.status` - Get sync status
+```typescript
+// apps/mobile/src/lib/powersync-schema.ts
+import { Schema, Table, Column, ColumnType } from '@powersync/react-native';
 
-### 7.4 Mobile App Changes
+export const AppSchema = new Schema([
+  new Table({
+    name: 'workouts',
+    columns: [
+      new Column({ name: 'user_id', type: ColumnType.TEXT }),
+      new Column({ name: 'name', type: ColumnType.TEXT }),
+      new Column({ name: 'status', type: ColumnType.TEXT }),
+      new Column({ name: 'started_at', type: ColumnType.TEXT }),
+      new Column({ name: 'completed_at', type: ColumnType.TEXT }),
+      new Column({ name: 'duration', type: ColumnType.INTEGER }),
+    ],
+  }),
+  new Table({
+    name: 'workout_sets',
+    columns: [
+      new Column({ name: 'workout_id', type: ColumnType.TEXT }),
+      new Column({ name: 'exercise_id', type: ColumnType.TEXT }),
+      new Column({ name: 'user_id', type: ColumnType.TEXT }),
+      new Column({ name: 'set_number', type: ColumnType.INTEGER }),
+      new Column({ name: 'reps', type: ColumnType.INTEGER }),
+      new Column({ name: 'weight', type: ColumnType.REAL }),
+      new Column({ name: 'weight_unit', type: ColumnType.TEXT }),
+      new Column({ name: 'rpe', type: ColumnType.REAL }),
+      new Column({ name: 'is_pr', type: ColumnType.INTEGER }),
+      new Column({ name: 'voice_transcript', type: ColumnType.TEXT }),
+    ],
+  }),
+  new Table({
+    name: 'exercises',
+    columns: [
+      new Column({ name: 'name', type: ColumnType.TEXT }),
+      new Column({ name: 'primary_muscle', type: ColumnType.TEXT }),
+      new Column({ name: 'equipment', type: ColumnType.TEXT }),
+      new Column({ name: 'is_compound', type: ColumnType.INTEGER }),
+    ],
+  }),
+  new Table({
+    name: 'voice_commands',
+    columns: [
+      new Column({ name: 'user_id', type: ColumnType.TEXT }),
+      new Column({ name: 'workout_id', type: ColumnType.TEXT }),
+      new Column({ name: 'raw_transcript', type: ColumnType.TEXT }),
+      new Column({ name: 'parsed_output', type: ColumnType.TEXT }),
+      new Column({ name: 'confidence', type: ColumnType.REAL }),
+    ],
+  }),
+]);
+```
 
-- Offline indicator
+### 7.4 Sync Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MOBILE APP (Expo)                        │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              PowerSync (SQLite)                      │   │
+│  │  - Works offline                                     │   │
+│  │  - Automatic sync when online                        │   │
+│  │  - Conflict resolution                               │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Automatic bi-directional sync
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 SUPABASE POSTGRESQL                         │
+│                 (source of truth)                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 7.5 Sync Tables (Priority Order)
+
+1. `workout_sets` - Most critical for offline logging
+2. `workouts` - Workout sessions
+3. `voice_commands` - Voice logs
+4. `exercises` - Read-only cache
+5. `user_profiles` - User settings
+
+### 7.6 Mobile App Changes
+
+- Offline indicator component
 - Sync status in settings
 - Queue indicator for pending syncs
-- Auto-sync on connectivity
+- Auto-sync on connectivity change
 
 ---
 
-## Phase 8: Enhanced AI & Vector Search (Week 14)
+## Phase 8: AI Services & RAG (Week 14)
 
-### 8.1 Vector Search Setup
+### 8.1 AI Coach with RAG
 
-```sql
--- Create indexes for vector similarity search
-CREATE INDEX idx_exercises_embedding ON exercises
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
+```typescript
+// apps/backend/src/services/ai-coach.ts
+import OpenAI from 'openai';
+import { getRelevantKnowledge, getExerciseCues } from './exercise-matcher';
+import { redis } from '../lib/upstash';
 
-CREATE INDEX idx_exercise_cues_embedding ON exercise_cues
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
+const grok = new OpenAI({
+  apiKey: process.env.XAI_API_KEY,
+  baseURL: 'https://api.x.ai/v1',
+});
 
-CREATE INDEX idx_knowledge_base_embedding ON knowledge_base
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
+interface CoachContext {
+  userId: string;
+  currentWorkout?: any;
+  recentPRs?: any[];
+  injuries?: any[];
+}
 
--- Full-text search on exercises
-CREATE INDEX idx_exercises_search ON exercises USING gin(search_vector);
+export async function askCoach(
+  question: string,
+  context: CoachContext
+): Promise<string> {
+  // 1. Get relevant knowledge from Upstash Search (RAG)
+  const knowledge = await getRelevantKnowledge(question);
 
--- Function to update search vector
-CREATE OR REPLACE FUNCTION exercises_search_vector_update() RETURNS trigger AS $$
-BEGIN
-  NEW.search_vector :=
-    setweight(to_tsvector('english', COALESCE(NEW.name, '')), 'A') ||
-    setweight(to_tsvector('english', COALESCE(array_to_string(NEW.synonyms, ' '), '')), 'B') ||
-    setweight(to_tsvector('english', COALESCE(NEW.description, '')), 'C');
-  NEW.normalized_name := lower(regexp_replace(NEW.name, '[^a-zA-Z0-9]', '', 'g'));
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+  // 2. Build context for AI
+  const ragContext = knowledge.map(k => k.content).join('\n\n');
 
-CREATE TRIGGER exercises_search_vector_trigger
-  BEFORE INSERT OR UPDATE ON exercises
-  FOR EACH ROW EXECUTE FUNCTION exercises_search_vector_update();
+  // 3. Build system prompt with context
+  const systemPrompt = `You are VoiceFit's AI fitness coach. You have access to the following knowledge:
+
+${ragContext}
+
+User context:
+- Recent PRs: ${JSON.stringify(context.recentPRs || [])}
+- Active injuries: ${JSON.stringify(context.injuries || [])}
+- Current workout: ${JSON.stringify(context.currentWorkout || 'None')}
+
+Provide helpful, concise fitness advice. If suggesting exercise substitutions, consider the user's injuries.`;
+
+  // 4. Call Grok
+  const response = await grok.chat.completions.create({
+    model: 'grok-2',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: question },
+    ],
+    tools: [
+      {
+        type: 'function',
+        function: {
+          name: 'suggest_exercise_substitution',
+          description: 'Suggest an alternative exercise',
+          parameters: {
+            type: 'object',
+            properties: {
+              exercise: { type: 'string' },
+              reason: { type: 'string', enum: ['injury', 'equipment', 'preference'] },
+              body_part: { type: 'string' },
+            },
+            required: ['exercise', 'reason'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_exercise_cues',
+          description: 'Get form cues for an exercise',
+          parameters: {
+            type: 'object',
+            properties: {
+              exercise_id: { type: 'string' },
+            },
+            required: ['exercise_id'],
+          },
+        },
+      },
+    ],
+  });
+
+  // 5. Handle tool calls if any
+  const message = response.choices[0].message;
+  if (message.tool_calls) {
+    // Process tool calls and get final response
+    // ...
+  }
+
+  return message.content || '';
+}
+
+// Streaming version for chat UI
+export async function* streamCoachResponse(
+  question: string,
+  context: CoachContext
+) {
+  const knowledge = await getRelevantKnowledge(question);
+  const ragContext = knowledge.map(k => k.content).join('\n\n');
+
+  const stream = await grok.chat.completions.create({
+    model: 'grok-2',
+    messages: [
+      { role: 'system', content: `You are VoiceFit's AI coach.\n\nKnowledge:\n${ragContext}` },
+      { role: 'user', content: question },
+    ],
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content;
+    if (content) yield content;
+  }
+}
 ```
 
-### 8.2 New AI Services
+### 8.2 Voice Parser Service
 
-1. **Exercise Matcher** (`services/exercise-matcher.ts`)
-   - Vector similarity search
-   - Phonetic matching (Soundex/Metaphone)
-   - Fuzzy text matching
-   - Combined scoring
+```typescript
+// apps/backend/src/services/voice-parser.ts
+import OpenAI from 'openai';
+import { matchExercise } from './exercise-matcher';
+import { redis } from '../lib/upstash';
 
-2. **RAG Query Engine** (`services/rag-engine.ts`)
-   - Query knowledge_base
-   - Context retrieval for AI coach
-   - Cue retrieval for exercises
+const grok = new OpenAI({
+  apiKey: process.env.XAI_API_KEY,
+  baseURL: 'https://api.x.ai/v1',
+});
 
-3. **Embedding Service** (`services/embeddings.ts`)
-   - Generate embeddings via Grok/OpenAI
-   - Batch embedding updates
-   - Embedding caching
+interface ParsedSet {
+  exercise: string;
+  exerciseId: string;
+  reps: number;
+  weight: number;
+  weightUnit: 'lbs' | 'kg';
+  rpe?: number;
+  confidence: number;
+}
+
+export async function parseVoiceCommand(transcript: string): Promise<ParsedSet> {
+  // 1. Check cache
+  const cacheKey = `voice:${transcript.toLowerCase().trim()}`;
+  const cached = await redis.get<ParsedSet>(cacheKey);
+  if (cached) return cached;
+
+  // 2. Match exercise using Upstash Search
+  const exerciseMatches = await matchExercise(transcript);
+  const bestMatch = exerciseMatches[0];
+
+  // 3. Use Grok to parse the numbers
+  const response = await grok.chat.completions.create({
+    model: 'grok-2',
+    messages: [
+      {
+        role: 'system',
+        content: `Parse workout voice commands. Extract reps, weight, and RPE.
+The exercise is: ${bestMatch.exerciseName}
+Return JSON: { "reps": number, "weight": number, "weightUnit": "lbs"|"kg", "rpe": number|null }`,
+      },
+      { role: 'user', content: transcript },
+    ],
+    response_format: { type: 'json_object' },
+  });
+
+  const parsed = JSON.parse(response.choices[0].message.content || '{}');
+
+  const result: ParsedSet = {
+    exercise: bestMatch.exerciseName,
+    exerciseId: bestMatch.exerciseId,
+    reps: parsed.reps || 0,
+    weight: parsed.weight || 0,
+    weightUnit: parsed.weightUnit || 'lbs',
+    rpe: parsed.rpe,
+    confidence: bestMatch.confidence,
+  };
+
+  // 4. Cache result
+  await redis.set(cacheKey, result, { ex: 3600 });
+
+  return result;
+}
+```
 
 ### 8.3 Knowledge Base Seeding
 
+Content categories to index in Upstash Search:
+
 - Exercise guides (form, common mistakes)
 - Training principles (progressive overload, periodization)
-- Nutrition basics
-- Recovery protocols
-- Injury prevention
+- Nutrition basics (protein, macros, timing)
+- Recovery protocols (sleep, deload, active recovery)
+- Injury prevention (warmup, mobility, common issues)
 
 ---
 
@@ -1109,7 +1517,7 @@ CREATE TRIGGER exercises_search_vector_trigger
 - `StreakIndicator` - Current streak display
 - `BadgeToast` - Badge earned notification
 - `PRCelebration` - PR achievement animation
-- `SyncIndicator` - Offline sync status
+- `SyncIndicator` - Offline sync status (PowerSync)
 - `MapView` - Run route display
 
 ---
@@ -1167,6 +1575,21 @@ CREATE TRIGGER exercises_search_vector_trigger
 
 ---
 
+## External Services Summary
+
+| Service | Purpose | Setup Required |
+|---------|---------|----------------|
+| **Supabase** | Database, Auth | Create project, run migrations |
+| **Upstash Search** | Hybrid search (exercises, RAG) | Create indexes, index data |
+| **Upstash Redis** | Caching, rate limiting | Create database |
+| **Grok (xAI)** | AI coach, voice parsing | Get API key |
+| **PowerSync** | Offline sync | Configure sync rules |
+| **WHOOP** | Wearable data | OAuth app setup |
+| **Terra** | Multi-wearable aggregation | API key |
+| **OpenWeatherMap** | Weather for runs | API key |
+
+---
+
 ## tRPC Router Summary
 
 ### Final Router Count: ~25 routers
@@ -1183,10 +1606,11 @@ export const appRouter = router({
   badges: badgesRouter,
   streaks: streaksRouter,
 
-  // Exercises
+  // Exercises & Search
   exercise: exerciseRouter,
   exerciseCues: exerciseCuesRouter,
   substitutions: substitutionsRouter,
+  search: searchRouter, // Upstash Search queries
 
   // Workouts
   workout: workoutRouter,
@@ -1230,9 +1654,6 @@ export const appRouter = router({
   // CrossFit
   wods: wodsRouter,
   wodLogs: wodLogsRouter,
-
-  // Sync
-  sync: syncRouter,
 });
 ```
 
@@ -1242,14 +1663,14 @@ export const appRouter = router({
 
 | Phase | Focus | Duration |
 |-------|-------|----------|
-| 1 | Database Foundation & Core Schema | 2 weeks |
+| 1 | Database Foundation & Upstash Setup | 2 weeks |
 | 2 | Program Generation System | 2 weeks |
 | 3 | Health & Recovery System | 2 weeks |
 | 4 | Running & GPS Features | 2 weeks |
 | 5 | Coach & Client System | 2 weeks |
 | 6 | CrossFit Support | 1 week |
-| 7 | Offline Support & Sync | 2 weeks |
-| 8 | Enhanced AI & Vector Search | 1 week |
+| 7 | Offline Support (PowerSync) | 2 weeks |
+| 8 | AI Services & RAG | 1 week |
 | 9 | Mobile App Completion | 2 weeks |
 | 10 | Web Dashboard Completion | 2 weeks |
 
@@ -1257,11 +1678,48 @@ export const appRouter = router({
 
 ---
 
+## Environment Variables
+
+```env
+# Supabase
+DATABASE_URL=postgresql://...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Upstash Search
+UPSTASH_SEARCH_REST_URL=https://your-search.upstash.io
+UPSTASH_SEARCH_REST_TOKEN=your-search-token
+
+# Upstash Redis
+UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-redis-token
+
+# AI (Grok)
+XAI_API_KEY=your-xai-key
+
+# PowerSync
+POWERSYNC_URL=https://your-instance.powersync.co
+POWERSYNC_TOKEN=your-token
+
+# Wearables
+WHOOP_CLIENT_ID=your-whoop-id
+WHOOP_CLIENT_SECRET=your-whoop-secret
+TERRA_API_KEY=your-terra-key
+
+# Weather
+OPENWEATHERMAP_API_KEY=your-owm-key
+```
+
+---
+
 ## Next Steps
 
 1. Review and approve this plan
 2. Create new Supabase project
-3. Run Phase 1 SQL migrations
-4. Begin implementing Phase 1 Drizzle schemas and routers
+3. Create Upstash Search indexes (exercises, exercise_cues, knowledge_base)
+4. Create Upstash Redis database
+5. Run Phase 1 SQL migrations
+6. Begin implementing Phase 1 Drizzle schemas and routers
 
 Ready to begin when you are.
