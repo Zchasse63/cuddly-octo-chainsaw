@@ -7,6 +7,12 @@ import { coachRouter } from './coach';
 import { readinessRouter } from './readiness';
 import { programRouter } from './program';
 import { injuryRouter } from './injury';
+import { onboardingRouter } from './onboarding';
+import { gamificationRouter } from './gamification';
+import { searchRouter } from './search';
+import { conversationsRouter } from './conversations';
+import { substitutionsRouter } from './substitutions';
+import { knowledgeRouter } from './knowledge';
 
 export const appRouter = router({
   auth: authRouter,
@@ -17,6 +23,12 @@ export const appRouter = router({
   readiness: readinessRouter,
   program: programRouter,
   injury: injuryRouter,
+  onboarding: onboardingRouter,
+  gamification: gamificationRouter,
+  search: searchRouter,
+  conversations: conversationsRouter,
+  substitutions: substitutionsRouter,
+  knowledge: knowledgeRouter,
 });
 
 // Export type for client
