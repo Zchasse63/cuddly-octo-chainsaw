@@ -304,4 +304,37 @@ export const workoutRouter = router({
 
     return result.rows;
   }),
+
+  // Get exercise history (sets for a specific exercise)
+  exerciseHistory: protectedProcedure
+    .input(
+      z.object({
+        exerciseId: z.string().uuid(),
+        limit: z.number().min(1).max(100).default(20),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.workoutSets.findMany({
+        where: and(
+          eq(workoutSets.userId, ctx.user.id),
+          eq(workoutSets.exerciseId, input.exerciseId)
+        ),
+        orderBy: [desc(workoutSets.createdAt)],
+        limit: input.limit,
+      });
+    }),
+
+  // Get PRs for a specific exercise
+  exercisePRs: protectedProcedure
+    .input(z.object({ exerciseId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.personalRecords.findMany({
+        where: and(
+          eq(personalRecords.userId, ctx.user.id),
+          eq(personalRecords.exerciseId, input.exerciseId)
+        ),
+        orderBy: [desc(personalRecords.estimated1rm)],
+        limit: 5,
+      });
+    }),
 });

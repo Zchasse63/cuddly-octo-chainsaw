@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { exercises } from './schema/exercises';
-import { users, userProfiles, fitnessGoal, fitnessLevel } from './schema/users';
+import { users, userProfiles } from './schema/users';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -9,6 +9,52 @@ dotenv.config();
 const connectionString = process.env.DATABASE_URL!;
 const client = postgres(connectionString);
 const db = drizzle(client);
+
+// Map category to isCompound
+function isCompoundExercise(category: string): boolean {
+  return category === 'compound';
+}
+
+// Map equipment string to array matching the schema enum
+type EquipmentType = 'barbell' | 'dumbbell' | 'kettlebell' | 'cable' | 'machine' | 'bodyweight' | 'bands' | 'smith_machine' | 'ez_bar' | 'trap_bar';
+
+function mapEquipment(equipment: string): EquipmentType[] {
+  const mapping: Record<string, EquipmentType> = {
+    'barbell': 'barbell',
+    'dumbbell': 'dumbbell',
+    'kettlebell': 'kettlebell',
+    'cable': 'cable',
+    'machine': 'machine',
+    'bodyweight': 'bodyweight',
+    'band': 'bands',
+    'other': 'bodyweight', // Default fallback
+  };
+  const mapped = mapping[equipment] || 'bodyweight';
+  return [mapped];
+}
+
+// Map muscle group to valid enum value
+type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'forearms' | 'quadriceps' | 'hamstrings' | 'glutes' | 'calves' | 'abs' | 'obliques' | 'lower_back' | 'traps' | 'lats' | 'full_body';
+
+function mapMuscleGroup(muscleGroup: string): MuscleGroup {
+  const mapping: Record<string, MuscleGroup> = {
+    'chest': 'chest',
+    'back': 'back',
+    'shoulders': 'shoulders',
+    'biceps': 'biceps',
+    'triceps': 'triceps',
+    'forearms': 'forearms',
+    'quadriceps': 'quadriceps',
+    'hamstrings': 'hamstrings',
+    'glutes': 'glutes',
+    'calves': 'calves',
+    'core': 'abs',
+    'traps': 'traps',
+    'full_body': 'full_body',
+    'cardio': 'full_body', // Map cardio to full_body
+  };
+  return mapping[muscleGroup] || 'full_body';
+}
 
 // Exercise database - comprehensive list covering all muscle groups
 const exerciseData = [
@@ -359,17 +405,17 @@ async function seed() {
 
     const exercisesToInsert = exerciseData.map((exercise) => ({
       name: exercise.name,
-      muscleGroup: exercise.muscleGroup as any,
-      equipment: exercise.equipment as any,
-      category: exercise.category as any,
+      primaryMuscle: mapMuscleGroup(exercise.muscleGroup),
+      equipment: mapEquipment(exercise.equipment),
+      isCompound: isCompoundExercise(exercise.category),
       description: `${exercise.name} - A ${exercise.category} exercise targeting ${exercise.muscleGroup} using ${exercise.equipment}.`,
       instructions: [
         `Set up properly for ${exercise.name}`,
         'Maintain proper form throughout the movement',
         'Control the weight on both concentric and eccentric phases',
         'Focus on mind-muscle connection',
-      ],
-      aliases: generateAliases(exercise.name),
+      ].join('\n'),
+      synonyms: generateAliases(exercise.name),
     }));
 
     // Insert in batches to avoid overwhelming the database
@@ -381,13 +427,13 @@ async function seed() {
     }
 
     // Create a demo coach user
+    // Note: In production, users are created via Supabase Auth
+    // This is for seeding demo data only
     console.log('👤 Creating demo coach user...');
     const [demoUser] = await db
       .insert(users)
       .values({
         email: 'coach@voicefit.demo',
-        passwordHash: '$2b$10$demohashedpassword', // Not a real password
-        name: 'Demo Coach',
       })
       .onConflictDoNothing()
       .returning();
@@ -395,13 +441,13 @@ async function seed() {
     if (demoUser) {
       await db.insert(userProfiles).values({
         userId: demoUser.id,
-        age: 35,
-        gender: 'male',
-        heightCm: 180,
-        weightKg: 82,
-        fitnessLevel: fitnessLevel.enumValues[2], // intermediate
-        fitnessGoal: fitnessGoal.enumValues[0], // strength
-        preferredUnit: 'metric',
+        name: 'Demo Coach',
+        experienceLevel: 'intermediate',
+        goals: ['strength', 'muscle_gain'],
+        trainingFrequency: '4 days/week',
+        preferredEquipment: ['barbell', 'dumbbell', 'cable'],
+        tier: 'coach',
+        preferredWeightUnit: 'kg',
       }).onConflictDoNothing();
     }
 
