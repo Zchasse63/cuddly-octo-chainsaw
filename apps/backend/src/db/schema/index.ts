@@ -52,3 +52,6 @@ export * from './crossfit';
 
 // Training programs & calendar schemas
 export * from './programs';
+
+// Shoe tracking schemas
+export * from './shoes';

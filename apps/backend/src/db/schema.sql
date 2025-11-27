@@ -841,6 +841,79 @@ CREATE TABLE heart_rate_zones (
   updated_at TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
+-- Running shoes
+CREATE TABLE running_shoes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+
+  -- Shoe details
+  brand TEXT NOT NULL,
+  model TEXT NOT NULL,
+  nickname TEXT,
+  color TEXT,
+  size TEXT,
+
+  -- Purchase info
+  purchase_date TIMESTAMP,
+  purchase_price REAL,
+  purchase_location TEXT,
+
+  -- Mileage tracking
+  initial_mileage REAL DEFAULT 0,
+  total_mileage_meters REAL DEFAULT 0,
+  replacement_threshold_meters REAL DEFAULT 643738, -- 400 miles in meters
+
+  -- Status
+  is_active BOOLEAN DEFAULT true,
+  is_default BOOLEAN DEFAULT false,
+  retired_at TIMESTAMP,
+  retired_reason TEXT,
+
+  -- Notes
+  notes TEXT,
+
+  -- Activity count
+  total_runs INTEGER DEFAULT 0,
+
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Running activity shoes (link table)
+CREATE TABLE running_activity_shoes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  activity_id UUID REFERENCES running_activities(id) ON DELETE CASCADE NOT NULL,
+  shoe_id UUID REFERENCES running_shoes(id) ON DELETE CASCADE NOT NULL,
+  distance_meters REAL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Indexes
+CREATE INDEX idx_running_shoes_user_id ON running_shoes(user_id);
+CREATE INDEX idx_running_shoes_is_active ON running_shoes(is_active);
+CREATE INDEX idx_running_activity_shoes_activity_id ON running_activity_shoes(activity_id);
+CREATE INDEX idx_running_activity_shoes_shoe_id ON running_activity_shoes(shoe_id);
+
+-- RLS
+ALTER TABLE running_shoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE running_activity_shoes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own shoes"
+  ON running_shoes FOR ALL
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can manage own activity shoes"
+  ON running_activity_shoes FOR ALL
+  USING (EXISTS (
+    SELECT 1 FROM running_activities
+    WHERE id = running_activity_shoes.activity_id AND user_id = auth.uid()
+  ));
+
+-- Triggers
+CREATE TRIGGER update_running_shoes_updated_at
+  BEFORE UPDATE ON running_shoes
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- ============================================
 -- PHASE 3: NUTRITION (Apple Health + Terra)
 -- ============================================

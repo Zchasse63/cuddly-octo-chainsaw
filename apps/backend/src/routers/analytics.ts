@@ -5,6 +5,7 @@ import {
   trainingLoad, bodyPartVolume, aiInsights, userGoals
 } from '../db/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
+import { createHealthIntelligence } from '../services/healthIntelligence';
 
 export const analyticsRouter = router({
   // ==================== Daily Analytics ====================
@@ -406,6 +407,39 @@ export const analyticsRouter = router({
         .returning();
 
       return updated;
+    }),
+
+  // ==================== Health Intelligence ====================
+
+  // Get health correlations
+  getHealthCorrelations: protectedProcedure
+    .input(
+      z.object({
+        period: z.enum([7, 14, 30, 60]).default(30),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const healthIntel = createHealthIntelligence(ctx.db, ctx.user.id);
+      return healthIntel.getCorrelations(input.period);
+    }),
+
+  // Get health score
+  getHealthScore: protectedProcedure.query(async ({ ctx }) => {
+    const healthIntel = createHealthIntelligence(ctx.db, ctx.user.id);
+    return healthIntel.getHealthScore();
+  }),
+
+  // Get AI-powered health insights
+  getAIHealthInsights: protectedProcedure
+    .input(
+      z.object({
+        period: z.enum([7, 14, 30, 60]).default(30),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const healthIntel = createHealthIntelligence(ctx.db, ctx.user.id);
+      const insights = await healthIntel.generateAIInsights(input.period);
+      return { insights };
     }),
 
   // ==================== Dashboard Summary ====================

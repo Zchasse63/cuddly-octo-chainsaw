@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { router, protectedProcedure, publicProcedure } from '../trpc';
 import { userStreaks, userBadges, badgeDefinitions } from '../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
+import { createBadgeUnlocker } from '../services/badgeUnlocker';
+import { badgeSeedData } from '../db/seeds/badges';
 
 export const gamificationRouter = router({
   // Get user's streaks
@@ -230,5 +232,93 @@ export const gamificationRouter = router({
 
       // PRs leaderboard would need the PR history table
       return [];
+    }),
+
+  // Check all badges for user and award any earned
+  checkAllBadges: protectedProcedure.mutation(async ({ ctx }) => {
+    const badgeUnlocker = createBadgeUnlocker(ctx.db, ctx.user.id);
+    const results = await badgeUnlocker.checkAllBadges();
+
+    const newlyEarned = results.filter((r) => r.earned);
+    return {
+      checked: results.length,
+      newlyEarned: newlyEarned.length,
+      badges: newlyEarned,
+    };
+  }),
+
+  // Check badges after workout
+  checkBadgesAfterWorkout: protectedProcedure
+    .input(z.object({ workoutId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const badgeUnlocker = createBadgeUnlocker(ctx.db, ctx.user.id);
+      const results = await badgeUnlocker.checkAfterWorkout(input.workoutId);
+
+      return {
+        newBadges: results.filter((r) => r.earned),
+      };
+    }),
+
+  // Check badges after run
+  checkBadgesAfterRun: protectedProcedure
+    .input(z.object({ activityId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const badgeUnlocker = createBadgeUnlocker(ctx.db, ctx.user.id);
+      const results = await badgeUnlocker.checkAfterRun(input.activityId);
+
+      return {
+        newBadges: results.filter((r) => r.earned),
+      };
+    }),
+
+  // Seed badge definitions (admin only - should be protected in production)
+  seedBadgeDefinitions: protectedProcedure.mutation(async ({ ctx }) => {
+    // Insert all badge definitions
+    const inserted = await ctx.db
+      .insert(badgeDefinitions)
+      .values(badgeSeedData)
+      .onConflictDoNothing()
+      .returning();
+
+    return {
+      inserted: inserted.length,
+      total: badgeSeedData.length,
+    };
+  }),
+
+  // Get badges by category
+  getBadgesByCategory: protectedProcedure
+    .input(z.object({ category: z.enum(['strength', 'running', 'streak', 'hybrid']) }))
+    .query(async ({ ctx, input }) => {
+      const definitions = await ctx.db.query.badgeDefinitions.findMany({
+        where: eq(badgeDefinitions.badgeType, input.category),
+      });
+
+      const userEarned = await ctx.db.query.userBadges.findMany({
+        where: eq(userBadges.userId, ctx.user.id),
+        columns: { badgeId: true, earnedAt: true },
+      });
+
+      const earnedMap = new Map(userEarned.map((b) => [b.badgeId, b.earnedAt]));
+
+      return definitions.map((def) => ({
+        ...def,
+        earned: earnedMap.has(def.id),
+        earnedAt: earnedMap.get(def.id),
+      }));
+    }),
+
+  // Get recently earned badges
+  getRecentBadges: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(50).default(10) }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.userBadges.findMany({
+        where: eq(userBadges.userId, ctx.user.id),
+        orderBy: [desc(userBadges.earnedAt)],
+        limit: input.limit,
+        with: {
+          definition: true,
+        },
+      });
     }),
 });

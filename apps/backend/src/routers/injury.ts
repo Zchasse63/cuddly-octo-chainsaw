@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 import { detectInjury, classifyPainType } from '../services/injuryDetection';
+import { createInjuryRiskService } from '../services/injuryRisk';
 import { userProfiles } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -141,4 +142,25 @@ export const injuryRouter = router({
         severity: input.severity,
       };
     }),
+
+  // ==================== Injury Risk Assessment ====================
+
+  // Get full injury risk assessment
+  getRiskAssessment: protectedProcedure.query(async ({ ctx }) => {
+    const riskService = createInjuryRiskService(ctx.db, ctx.user.id);
+    return riskService.getAssessment();
+  }),
+
+  // Get proactive warnings
+  getWarnings: protectedProcedure.query(async ({ ctx }) => {
+    const riskService = createInjuryRiskService(ctx.db, ctx.user.id);
+    return riskService.getWarnings();
+  }),
+
+  // Get AI-powered risk analysis
+  getAIRiskAnalysis: protectedProcedure.query(async ({ ctx }) => {
+    const riskService = createInjuryRiskService(ctx.db, ctx.user.id);
+    const analysis = await riskService.getAIAnalysis();
+    return { analysis };
+  }),
 });

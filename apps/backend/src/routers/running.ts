@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { router, protectedProcedure, publicProcedure } from '../trpc';
-import { runningActivities, runningPrograms, runningProgramWorkouts, runningPRs, heartRateZones } from '../db/schema';
+import { runningActivities, runningPrograms, runningProgramWorkouts, runningPRs, heartRateZones, runningShoes, runningActivityShoes } from '../db/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
+import { createBadgeUnlocker } from '../services/badgeUnlocker';
 
 export const runningRouter = router({
   // ==================== Activities ====================
@@ -29,22 +30,51 @@ export const runningRouter = router({
         programId: z.string().uuid().optional(),
         programWeek: z.number().optional(),
         programDay: z.number().optional(),
+        shoeId: z.string().uuid().optional(), // Link to running shoe
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { shoeId, ...activityData } = input;
+
       const [activity] = await ctx.db
         .insert(runningActivities)
         .values({
           userId: ctx.user.id,
-          ...input,
+          ...activityData,
           source: 'manual',
         })
         .returning();
 
+      // Link shoe to activity if provided
+      if (shoeId && input.distanceMeters) {
+        await ctx.db.insert(runningActivityShoes).values({
+          activityId: activity.id,
+          shoeId,
+          distanceMeters: input.distanceMeters,
+        });
+
+        // Update shoe mileage
+        await ctx.db
+          .update(runningShoes)
+          .set({
+            totalMileageMeters: sql`${runningShoes.totalMileageMeters} + ${input.distanceMeters}`,
+            totalRuns: sql`${runningShoes.totalRuns} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(runningShoes.id, shoeId));
+      }
+
       // Check for PRs
       await checkRunningPRs(ctx.db, ctx.user.id, activity);
 
-      return activity;
+      // Check for badge unlocks
+      const badgeUnlocker = createBadgeUnlocker(ctx.db, ctx.user.id);
+      const newBadges = await badgeUnlocker.checkAfterRun(activity.id);
+
+      return {
+        activity,
+        newBadges: newBadges.filter((b) => b.earned),
+      };
     }),
 
   // Get user's running activities
