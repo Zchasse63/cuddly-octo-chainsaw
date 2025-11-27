@@ -18,7 +18,7 @@ import { Button } from '../../src/components/ui';
 import { QuickSetEditor } from '../../src/components/QuickSetEditor';
 import { useAuthStore } from '../../src/stores/auth';
 import { useWorkoutStore, useActiveWorkout, useIsWorkoutActive } from '../../src/stores/workout';
-import { useVoiceRecorder, formatDuration } from '../../src/hooks/useVoiceRecorder';
+import { useVoiceRecorder } from '../../src/hooks/useVoiceRecorder';
 import { api } from '../../src/lib/trpc';
 import { spacing, fontSize, fontWeight, borderRadius, springs } from '../../src/theme/tokens';
 
@@ -62,18 +62,23 @@ export default function ChatScreen() {
   const isWorkoutActive = useIsWorkoutActive();
   const { addExercise, addSet, completeSet } = useWorkoutStore();
 
-  // Voice recorder
+  // Voice recorder - SF Speech Recognizer
   const {
     state: voiceState,
-    isRecording,
-    duration: recordingDuration,
-    metering,
-    startRecording,
-    stopRecording,
-    cancelRecording,
+    isListening,
+    transcript,
+    partialTranscript,
+    startListening,
+    stopListening,
+    cancelListening,
+    isAvailable: voiceAvailable,
   } = useVoiceRecorder({
-    maxDuration: 15000, // 15 seconds max for quick logging
-    silenceTimeout: 1500, // 1.5 seconds of silence to auto-stop
+    locale: 'en-US',
+    onTranscript: (text, isFinal) => {
+      if (isFinal && text) {
+        processVoiceTranscript(text);
+      }
+    },
   });
 
   // UI state
@@ -130,9 +135,9 @@ export default function ChatScreen() {
   const voiceParseMutation = api.voice.parse.useMutation();
   const voiceConfirmMutation = api.voice.confirm.useMutation();
 
-  // Pulse animation while recording
+  // Pulse animation while listening
   useEffect(() => {
-    if (isRecording) {
+    if (isListening) {
       pulseScale.value = withRepeat(
         withSequence(
           withTiming(1.2, { duration: 500 }),
@@ -142,21 +147,14 @@ export default function ChatScreen() {
         false
       );
       micGlow.value = withTiming(1, { duration: 300 });
+      micScale.value = withSpring(1.1, springs.bouncy);
     } else {
       cancelAnimation(pulseScale);
       pulseScale.value = withSpring(1, springs.snappy);
       micGlow.value = withTiming(0, { duration: 200 });
-    }
-  }, [isRecording]);
-
-  // Metering-based scale
-  useEffect(() => {
-    if (isRecording) {
-      micScale.value = withSpring(1 + metering * 0.15, { damping: 15, stiffness: 300 });
-    } else {
       micScale.value = withSpring(1, springs.default);
     }
-  }, [metering, isRecording]);
+  }, [isListening]);
 
   const micButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: micScale.value }],
@@ -191,19 +189,16 @@ export default function ChatScreen() {
   }, [inputText, isLoading, chatMutation]);
 
   const handleVoicePress = async () => {
-    if (isRecording) {
-      // Stop and process
-      const uri = await stopRecording();
-      if (uri) {
-        await processVoiceRecording(uri);
-      }
+    if (isListening) {
+      // Stop listening - SF Speech will auto-process
+      await stopListening();
     } else {
-      // Start recording
-      await startRecording();
+      // Start listening
+      await startListening();
     }
   };
 
-  const processVoiceRecording = async (audioUri: string) => {
+  const processVoiceTranscript = async (spokenText: string) => {
     if (!activeWorkout) {
       // No active workout - show message
       setMessages((prev) => [
@@ -218,14 +213,20 @@ export default function ChatScreen() {
       return;
     }
 
-    // In production, send audio to speech-to-text service
-    // For now, simulate with a placeholder transcript
-    // TODO: Integrate with Whisper API or similar
-    const simulatedTranscript = "bench press 185 for 8";
+    // Show what was heard
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        role: 'user',
+        content: `🎤 "${spokenText}"`,
+        timestamp: new Date(),
+      },
+    ]);
 
     try {
       const result = await voiceParseMutation.mutateAsync({
-        transcript: simulatedTranscript,
+        transcript: spokenText,
         workoutId: activeWorkout.id,
       });
 
@@ -238,7 +239,7 @@ export default function ChatScreen() {
           {
             id: Date.now().toString(),
             role: 'assistant',
-            content: `I heard "${simulatedTranscript}" but couldn't understand the reps. Try saying something like "bench press 185 for 8 reps".`,
+            content: `I heard "${spokenText}" but couldn't understand the reps. Try saying something like "bench press 185 for 8 reps".`,
             timestamp: new Date(),
           },
         ]);
@@ -252,7 +253,7 @@ export default function ChatScreen() {
         weightUnit: parsed.weight_unit || 'lbs',
         reps: parsed.reps,
         confidence: parsed.confidence,
-        transcript: simulatedTranscript,
+        transcript: spokenText,
       };
 
       if (needsConfirmation || parsed.confidence < 0.7) {
@@ -682,6 +683,24 @@ export default function ChatScreen() {
           </View>
         )}
 
+        {/* Partial transcript while listening */}
+        {isListening && partialTranscript && (
+          <View
+            style={{
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+              backgroundColor: colors.tint.info,
+              marginHorizontal: spacing.md,
+              marginBottom: spacing.sm,
+              borderRadius: borderRadius.lg,
+            }}
+          >
+            <Text style={{ color: colors.text.secondary, fontSize: fontSize.sm, fontStyle: 'italic' }}>
+              "{partialTranscript}"
+            </Text>
+          </View>
+        )}
+
         {/* Input */}
         <View
           style={{
@@ -698,7 +717,7 @@ export default function ChatScreen() {
           {/* Voice button with pulse effect */}
           <View style={{ position: 'relative' }}>
             {/* Pulse ring */}
-            {isRecording && (
+            {isListening && (
               <Animated.View
                 style={[
                   {
@@ -716,42 +735,44 @@ export default function ChatScreen() {
             )}
             <AnimatedTouchable
               onPress={handleVoicePress}
-              onLongPress={cancelRecording}
+              onLongPress={cancelListening}
               delayLongPress={500}
+              disabled={!voiceAvailable}
               style={[
                 {
                   width: 44,
                   height: 44,
                   borderRadius: 22,
-                  backgroundColor: isRecording ? colors.accent.red : colors.background.secondary,
+                  backgroundColor: isListening ? colors.accent.red : colors.background.secondary,
                   justifyContent: 'center',
                   alignItems: 'center',
+                  opacity: voiceAvailable ? 1 : 0.5,
                 },
                 micButtonStyle,
               ]}
-              accessibilityLabel={isRecording ? 'Stop recording' : 'Start voice recording'}
+              accessibilityLabel={isListening ? 'Stop listening' : 'Start voice recognition'}
               accessibilityRole="button"
-              accessibilityHint={isRecording ? 'Tap to stop and process voice' : 'Tap to log a set with your voice'}
+              accessibilityHint={isListening ? 'Tap to stop and process voice' : 'Tap to log a set with your voice'}
             >
-              {isRecording ? (
+              {isListening ? (
                 <MicOff size={20} color={colors.text.onAccent} />
               ) : (
-                <Mic size={20} color={colors.icon.secondary} />
+                <Mic size={20} color={voiceAvailable ? colors.icon.secondary : colors.icon.disabled} />
               )}
             </AnimatedTouchable>
           </View>
 
-          {/* Recording duration */}
-          {isRecording && (
+          {/* Listening indicator */}
+          {isListening && (
             <Text
               style={{
                 fontSize: fontSize.sm,
                 color: colors.accent.red,
                 fontWeight: fontWeight.medium,
-                minWidth: 40,
+                minWidth: 60,
               }}
             >
-              {formatDuration(recordingDuration)}
+              Listening...
             </Text>
           )}
 
@@ -768,30 +789,30 @@ export default function ChatScreen() {
             }}
             value={inputText}
             onChangeText={setInputText}
-            placeholder={isRecording ? 'Recording...' : 'Ask me anything...'}
+            placeholder={isListening ? 'Listening...' : 'Ask me anything...'}
             placeholderTextColor={colors.text.disabled}
             onSubmitEditing={handleSend}
             returnKeyType="send"
-            editable={!isRecording}
+            editable={!isListening}
           />
 
           {/* Send button */}
           <TouchableOpacity
             onPress={handleSend}
-            disabled={!inputText.trim() || isLoading || isRecording}
+            disabled={!inputText.trim() || isLoading || isListening}
             style={{
               width: 44,
               height: 44,
               borderRadius: 22,
-              backgroundColor: inputText.trim() && !isRecording ? colors.accent.blue : colors.background.secondary,
+              backgroundColor: inputText.trim() && !isListening ? colors.accent.blue : colors.background.secondary,
               justifyContent: 'center',
               alignItems: 'center',
-              opacity: inputText.trim() && !isLoading && !isRecording ? 1 : 0.5,
+              opacity: inputText.trim() && !isLoading && !isListening ? 1 : 0.5,
             }}
             accessibilityLabel="Send message"
             accessibilityRole="button"
           >
-            <Send size={20} color={inputText.trim() && !isRecording ? colors.text.onAccent : colors.icon.disabled} />
+            <Send size={20} color={inputText.trim() && !isListening ? colors.text.onAccent : colors.icon.disabled} />
           </TouchableOpacity>
         </View>
 

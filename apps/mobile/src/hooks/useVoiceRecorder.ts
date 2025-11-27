@@ -1,260 +1,201 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Audio } from 'expo-av';
+import Voice, {
+  SpeechResultsEvent,
+  SpeechErrorEvent,
+  SpeechStartEvent,
+  SpeechEndEvent,
+} from '@react-native-voice/voice';
 import * as Haptics from 'expo-haptics';
-import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 
 export type VoiceRecorderState =
   | 'idle'
   | 'requesting_permission'
-  | 'recording'
+  | 'listening'
   | 'processing'
   | 'error';
 
 interface UseVoiceRecorderOptions {
-  onTranscript?: (transcript: string) => void;
+  onTranscript?: (transcript: string, isFinal: boolean) => void;
   onError?: (error: string) => void;
-  maxDuration?: number; // in milliseconds
-  silenceTimeout?: number; // auto-stop after silence (ms)
+  locale?: string;
 }
 
 interface UseVoiceRecorderReturn {
   state: VoiceRecorderState;
-  isRecording: boolean;
-  duration: number;
+  isListening: boolean;
+  transcript: string;
+  partialTranscript: string;
   error: string | null;
-  startRecording: () => Promise<void>;
-  stopRecording: () => Promise<string | null>;
-  cancelRecording: () => Promise<void>;
-  metering: number; // Audio level 0-1 for visualization
+  startListening: () => Promise<void>;
+  stopListening: () => Promise<void>;
+  cancelListening: () => Promise<void>;
+  isAvailable: boolean;
 }
 
+/**
+ * useVoiceRecorder - Speech recognition hook using SF Speech Recognizer (iOS)
+ *
+ * Uses @react-native-voice/voice which wraps:
+ * - iOS: SF Speech Framework (SFSpeechRecognizer)
+ * - Android: Google Speech Recognition
+ *
+ * SF Speech provides:
+ * - On-device recognition (iOS 13+)
+ * - Real-time partial results
+ * - High accuracy for fitness terminology
+ */
 export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoiceRecorderReturn {
   const {
     onTranscript,
     onError,
-    maxDuration = 30000, // 30 seconds default
-    silenceTimeout = 2000, // 2 seconds of silence
+    locale = 'en-US',
   } = options;
 
   const [state, setState] = useState<VoiceRecorderState>('idle');
-  const [duration, setDuration] = useState(0);
+  const [transcript, setTranscript] = useState('');
+  const [partialTranscript, setPartialTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [metering, setMetering] = useState(0);
+  const [isAvailable, setIsAvailable] = useState(false);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const maxDurationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isListeningRef = useRef(false);
 
-  // Cleanup on unmount
+  // Check availability on mount
   useEffect(() => {
-    return () => {
-      if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync();
-      }
-      if (durationIntervalRef.current) {
-        clearInterval(durationIntervalRef.current);
-      }
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-      }
-      if (maxDurationTimeoutRef.current) {
-        clearTimeout(maxDurationTimeoutRef.current);
+    const checkAvailability = async () => {
+      try {
+        const available = await Voice.isAvailable();
+        setIsAvailable(!!available);
+      } catch {
+        setIsAvailable(false);
       }
     };
+    checkAvailability();
   }, []);
 
-  const clearTimers = useCallback(() => {
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current);
-      durationIntervalRef.current = null;
-    }
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current);
-      silenceTimeoutRef.current = null;
-    }
-    if (maxDurationTimeoutRef.current) {
-      clearTimeout(maxDurationTimeoutRef.current);
-      maxDurationTimeoutRef.current = null;
-    }
-  }, []);
+  // Set up Voice event listeners
+  useEffect(() => {
+    const onSpeechStart = (e: SpeechStartEvent) => {
+      setState('listening');
+      isListeningRef.current = true;
+    };
 
-  const startRecording = useCallback(async () => {
+    const onSpeechEnd = (e: SpeechEndEvent) => {
+      if (isListeningRef.current) {
+        setState('processing');
+        isListeningRef.current = false;
+      }
+    };
+
+    const onSpeechResults = (e: SpeechResultsEvent) => {
+      const results = e.value;
+      if (results && results.length > 0) {
+        const finalTranscript = results[0];
+        setTranscript(finalTranscript);
+        setPartialTranscript('');
+        onTranscript?.(finalTranscript, true);
+        setState('idle');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    };
+
+    const onSpeechPartialResults = (e: SpeechResultsEvent) => {
+      const results = e.value;
+      if (results && results.length > 0) {
+        setPartialTranscript(results[0]);
+        onTranscript?.(results[0], false);
+      }
+    };
+
+    const onSpeechError = (e: SpeechErrorEvent) => {
+      const errorMessage = e.error?.message || 'Speech recognition error';
+      setError(errorMessage);
+      setState('error');
+      isListeningRef.current = false;
+      onError?.(errorMessage);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    };
+
+    const onSpeechVolumeChanged = (e: any) => {
+      // Could use this for audio level visualization
+      // e.value contains the volume level
+    };
+
+    // Register listeners
+    Voice.onSpeechStart = onSpeechStart;
+    Voice.onSpeechEnd = onSpeechEnd;
+    Voice.onSpeechResults = onSpeechResults;
+    Voice.onSpeechPartialResults = onSpeechPartialResults;
+    Voice.onSpeechError = onSpeechError;
+    Voice.onSpeechVolumeChanged = onSpeechVolumeChanged;
+
+    // Cleanup
+    return () => {
+      Voice.destroy().then(Voice.removeAllListeners);
+    };
+  }, [onTranscript, onError]);
+
+  const startListening = useCallback(async () => {
     try {
       setError(null);
+      setTranscript('');
+      setPartialTranscript('');
       setState('requesting_permission');
 
-      // Request permissions
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        throw new Error('Microphone permission not granted');
-      }
-
-      // Configure audio mode
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      // Create and start recording
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync({
-        android: {
-          extension: '.m4a',
-          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-          audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 44100,
-          numberOfChannels: 1,
-          bitRate: 128000,
-        },
-        ios: {
-          extension: '.m4a',
-          audioQuality: Audio.IOSAudioQuality.HIGH,
-          sampleRate: 44100,
-          numberOfChannels: 1,
-          bitRate: 128000,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-        web: {
-          mimeType: 'audio/webm',
-          bitsPerSecond: 128000,
-        },
-      });
-
-      // Set up metering callback
-      recording.setOnRecordingStatusUpdate((status) => {
-        if (status.isRecording && status.metering !== undefined) {
-          // Convert dB to 0-1 scale (dB typically ranges from -160 to 0)
-          const normalizedMetering = Math.max(0, Math.min(1, (status.metering + 60) / 60));
-          setMetering(normalizedMetering);
-
-          // Reset silence timeout when there's audio
-          if (normalizedMetering > 0.1 && silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-            silenceTimeoutRef.current = setTimeout(() => {
-              // Auto-stop after silence
-              stopRecording();
-            }, silenceTimeout);
-          }
-        }
-      });
-
-      await recording.startAsync();
-      recordingRef.current = recording;
-
-      setState('recording');
-      setDuration(0);
-
-      // Haptic feedback
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Start duration counter
-      const startTime = Date.now();
-      durationIntervalRef.current = setInterval(() => {
-        setDuration(Date.now() - startTime);
-      }, 100);
+      // Start speech recognition
+      // On iOS, this uses SFSpeechRecognizer
+      await Voice.start(locale, {
+        // iOS specific options
+        RECOGNIZER_ENGINE: Platform.OS === 'ios' ? 'APPLE' : undefined,
+        EXTRA_PARTIAL_RESULTS: true,
+      });
 
-      // Set max duration timeout
-      maxDurationTimeoutRef.current = setTimeout(() => {
-        stopRecording();
-      }, maxDuration);
-
-      // Initial silence timeout
-      silenceTimeoutRef.current = setTimeout(() => {
-        stopRecording();
-      }, silenceTimeout);
-
+      setState('listening');
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to start recording';
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start speech recognition';
       setError(errorMessage);
       setState('error');
       onError?.(errorMessage);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [maxDuration, silenceTimeout, onError]);
+  }, [locale, onError]);
 
-  const stopRecording = useCallback(async (): Promise<string | null> => {
-    if (!recordingRef.current || state !== 'recording') {
-      return null;
-    }
-
-    clearTimers();
-    setState('processing');
-    setMetering(0);
-
+  const stopListening = useCallback(async () => {
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
-
-      // Reset audio mode
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-      });
-
-      if (uri) {
-        // In a real app, you'd send this to a speech-to-text service
-        // For now, return the URI and let the caller handle transcription
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setState('idle');
-        return uri;
-      }
-
-      setState('idle');
-      return null;
+      await Voice.stop();
+      setState('processing');
+      isListeningRef.current = false;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to stop recording';
-      setError(errorMessage);
-      setState('error');
-      onError?.(errorMessage);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return null;
-    }
-  }, [state, clearTimers, onError]);
-
-  const cancelRecording = useCallback(async () => {
-    if (!recordingRef.current) {
+      // Ignore errors when stopping
       setState('idle');
-      return;
     }
+  }, []);
 
-    clearTimers();
-    setMetering(0);
-
+  const cancelListening = useCallback(async () => {
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
-
-      // Delete the recording file
-      if (uri) {
-        await FileSystem.deleteAsync(uri, { idempotent: true });
-      }
-
-      // Reset audio mode
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-      });
-
+      await Voice.cancel();
       setState('idle');
-      setDuration(0);
+      setTranscript('');
+      setPartialTranscript('');
+      isListeningRef.current = false;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (err) {
       setState('idle');
     }
-  }, [clearTimers]);
+  }, []);
 
   return {
     state,
-    isRecording: state === 'recording',
-    duration,
+    isListening: state === 'listening',
+    transcript,
+    partialTranscript,
     error,
-    startRecording,
-    stopRecording,
-    cancelRecording,
-    metering,
+    startListening,
+    stopListening,
+    cancelListening,
+    isAvailable,
   };
 }
 
@@ -265,3 +206,19 @@ export function formatDuration(ms: number): string {
   const remainingSeconds = seconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Fitness-specific voice commands that SF Speech handles well:
+ *
+ * - "Bench press 185 for 8" → exercise: bench press, weight: 185, reps: 8
+ * - "Squats 225 pounds 5 reps" → exercise: squats, weight: 225, reps: 5
+ * - "Same weight 10 reps" → weight: (previous), reps: 10
+ * - "Add 5 pounds" → modifier command
+ * - "Done" / "Finished" → end set/workout
+ *
+ * SF Speech Recognizer advantages:
+ * - On-device processing (iOS 13+) for privacy
+ * - Low latency real-time results
+ * - Works offline after initial setup
+ * - Optimized for conversational speech
+ */
