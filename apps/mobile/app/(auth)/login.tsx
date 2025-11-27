@@ -111,6 +111,19 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
             />
+
+            <Link href="/(auth)/forgot-password" asChild>
+              <Text
+                style={{
+                  fontSize: fontSize.sm,
+                  color: colors.accent.blue,
+                  textAlign: 'right',
+                  marginTop: spacing.xs,
+                }}
+              >
+                Forgot password?
+              </Text>
+            </Link>
           </View>
 
           {/* Actions */}
