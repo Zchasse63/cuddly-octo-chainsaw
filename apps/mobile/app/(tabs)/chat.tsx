@@ -1,22 +1,55 @@
-import { View, Text, TextInput, FlatList, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, FlatList, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useState, useRef, useCallback } from 'react';
-import { Send, Bot, User as UserIcon, Mic, MicOff } from 'lucide-react-native';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Send, Bot, User as UserIcon, Mic, MicOff, Dumbbell, AlertCircle } from 'lucide-react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withRepeat,
+  withSequence,
+  withTiming,
+  cancelAnimation,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Button } from '../../src/components/ui';
+import { QuickSetEditor } from '../../src/components/QuickSetEditor';
 import { useAuthStore } from '../../src/stores/auth';
+import { useWorkoutStore, useActiveWorkout, useIsWorkoutActive } from '../../src/stores/workout';
+import { useVoiceRecorder, formatDuration } from '../../src/hooks/useVoiceRecorder';
 import { api } from '../../src/lib/trpc';
-import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
+import { spacing, fontSize, fontWeight, borderRadius, springs } from '../../src/theme/tokens';
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  type?: 'text' | 'workout_logged' | 'confirmation_needed';
+  metadata?: {
+    exerciseName?: string;
+    weight?: number;
+    weightUnit?: string;
+    reps?: number;
+    confidence?: number;
+    isPr?: boolean;
+  };
 }
+
+interface PendingSet {
+  exerciseName: string;
+  exerciseId?: string;
+  weight: number;
+  weightUnit: 'lbs' | 'kg';
+  reps: number;
+  confidence: number;
+  transcript: string;
+}
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 export default function ChatScreen() {
   const { colors } = useTheme();
@@ -24,17 +57,50 @@ export default function ChatScreen() {
   const user = useAuthStore((state) => state.user);
   const flatListRef = useRef<FlatList>(null);
 
+  // Workout state
+  const activeWorkout = useActiveWorkout();
+  const isWorkoutActive = useIsWorkoutActive();
+  const { addExercise, addSet, completeSet } = useWorkoutStore();
+
+  // Voice recorder
+  const {
+    state: voiceState,
+    isRecording,
+    duration: recordingDuration,
+    metering,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useVoiceRecorder({
+    maxDuration: 15000, // 15 seconds max for quick logging
+    silenceTimeout: 1500, // 1.5 seconds of silence to auto-stop
+  });
+
+  // UI state
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       role: 'assistant',
-      content: "Hey! I'm your AI fitness coach. I can help you log workouts, answer training questions, create programs, and more. What would you like to do?",
+      content: "Hey! I'm your AI fitness coach. Tap the mic to log a set with your voice, or ask me anything about training.",
       timestamp: new Date(),
     },
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [pendingSet, setPendingSet] = useState<PendingSet | null>(null);
+  const [showQuickEditor, setShowQuickEditor] = useState(false);
+  const [quickEditorData, setQuickEditorData] = useState({
+    exerciseName: '',
+    setNumber: 1,
+    weight: 135,
+    weightUnit: 'lbs' as 'lbs' | 'kg',
+    reps: 10,
+  });
+
+  // Animation values
+  const micScale = useSharedValue(1);
+  const micGlow = useSharedValue(0);
+  const pulseScale = useSharedValue(1);
 
   // Chat mutation using unified coach
   const chatMutation = api.coach.chat.useMutation({
@@ -52,13 +118,54 @@ export default function ChatScreen() {
       const errorMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: "Sorry, I couldn't process that request. Please try again.",
+        content: "Sorry, I couldn't process that. Please try again.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
       setIsLoading(false);
     },
   });
+
+  // Voice parsing mutation
+  const voiceParseMutation = api.voice.parse.useMutation();
+  const voiceConfirmMutation = api.voice.confirm.useMutation();
+
+  // Pulse animation while recording
+  useEffect(() => {
+    if (isRecording) {
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.2, { duration: 500 }),
+          withTiming(1, { duration: 500 })
+        ),
+        -1,
+        false
+      );
+      micGlow.value = withTiming(1, { duration: 300 });
+    } else {
+      cancelAnimation(pulseScale);
+      pulseScale.value = withSpring(1, springs.snappy);
+      micGlow.value = withTiming(0, { duration: 200 });
+    }
+  }, [isRecording]);
+
+  // Metering-based scale
+  useEffect(() => {
+    if (isRecording) {
+      micScale.value = withSpring(1 + metering * 0.15, { damping: 15, stiffness: 300 });
+    } else {
+      micScale.value = withSpring(1, springs.default);
+    }
+  }, [metering, isRecording]);
+
+  const micButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: micScale.value }],
+  }));
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+    opacity: 0.3 * micGlow.value,
+  }));
 
   const handleSend = useCallback(() => {
     if (!inputText.trim() || isLoading) return;
@@ -78,20 +185,351 @@ export default function ChatScreen() {
 
     chatMutation.mutate({ message: userMessage.content });
 
-    // Scroll to bottom
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
   }, [inputText, isLoading, chatMutation]);
 
-  const handleVoicePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsRecording(!isRecording);
-    // Voice recording would be implemented with expo-av
+  const handleVoicePress = async () => {
+    if (isRecording) {
+      // Stop and process
+      const uri = await stopRecording();
+      if (uri) {
+        await processVoiceRecording(uri);
+      }
+    } else {
+      // Start recording
+      await startRecording();
+    }
+  };
+
+  const processVoiceRecording = async (audioUri: string) => {
+    if (!activeWorkout) {
+      // No active workout - show message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'system',
+          content: "Start a workout first to log sets with voice. Tap 'Start Workout' on the Home tab.",
+          timestamp: new Date(),
+        },
+      ]);
+      return;
+    }
+
+    // In production, send audio to speech-to-text service
+    // For now, simulate with a placeholder transcript
+    // TODO: Integrate with Whisper API or similar
+    const simulatedTranscript = "bench press 185 for 8";
+
+    try {
+      const result = await voiceParseMutation.mutateAsync({
+        transcript: simulatedTranscript,
+        workoutId: activeWorkout.id,
+      });
+
+      const { parsed, exerciseName, exerciseId, needsConfirmation } = result;
+
+      if (!parsed.reps) {
+        // Couldn't parse - ask for clarification
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `I heard "${simulatedTranscript}" but couldn't understand the reps. Try saying something like "bench press 185 for 8 reps".`,
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
+
+      const setData: PendingSet = {
+        exerciseName: exerciseName || parsed.exercise_name || 'Unknown Exercise',
+        exerciseId,
+        weight: parsed.weight || 0,
+        weightUnit: parsed.weight_unit || 'lbs',
+        reps: parsed.reps,
+        confidence: parsed.confidence,
+        transcript: simulatedTranscript,
+      };
+
+      if (needsConfirmation || parsed.confidence < 0.7) {
+        // Low confidence - show quick editor for confirmation
+        setPendingSet(setData);
+        setQuickEditorData({
+          exerciseName: setData.exerciseName,
+          setNumber: getCurrentSetNumber(setData.exerciseName),
+          weight: setData.weight,
+          weightUnit: setData.weightUnit,
+          reps: setData.reps,
+        });
+        setShowQuickEditor(true);
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `I think I heard: ${setData.exerciseName} - ${setData.weight}${setData.weightUnit} × ${setData.reps}. Adjust below if needed.`,
+            timestamp: new Date(),
+            type: 'confirmation_needed',
+            metadata: {
+              confidence: parsed.confidence,
+            },
+          },
+        ]);
+      } else {
+        // High confidence - log immediately
+        await logSet(setData);
+      }
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: "Couldn't process that. Please try again or use the quick editor.",
+          timestamp: new Date(),
+        },
+      ]);
+    }
+  };
+
+  const getCurrentSetNumber = (exerciseName: string): number => {
+    if (!activeWorkout) return 1;
+    const exercise = activeWorkout.exercises.find(
+      (e) => e.name.toLowerCase() === exerciseName.toLowerCase()
+    );
+    return exercise ? exercise.sets.length + 1 : 1;
+  };
+
+  const logSet = async (setData: PendingSet) => {
+    if (!activeWorkout) return;
+
+    try {
+      // Find or create exercise in workout
+      let workoutExercise = activeWorkout.exercises.find(
+        (e) => e.name.toLowerCase() === setData.exerciseName.toLowerCase()
+      );
+
+      if (!workoutExercise) {
+        // Add new exercise
+        addExercise({
+          id: setData.exerciseId || `temp-${Date.now()}`,
+          name: setData.exerciseName,
+          primaryMuscle: 'Unknown', // Would come from exercise lookup
+        });
+        workoutExercise = activeWorkout.exercises[activeWorkout.exercises.length - 1];
+      }
+
+      // Add the set
+      if (workoutExercise) {
+        addSet(workoutExercise.id, {
+          weight: setData.weight,
+          reps: setData.reps,
+        });
+        completeSet(workoutExercise.id, workoutExercise.sets[workoutExercise.sets.length - 1]?.id || '');
+      }
+
+      // Confirm with backend
+      if (setData.exerciseId) {
+        const confirmResult = await voiceConfirmMutation.mutateAsync({
+          workoutId: activeWorkout.id,
+          exerciseId: setData.exerciseId,
+          reps: setData.reps,
+          weight: setData.weight || undefined,
+          weightUnit: setData.weightUnit,
+          voiceTranscript: setData.transcript,
+          confidence: setData.confidence,
+        });
+
+        // Add success message
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: confirmResult.confirmation,
+            timestamp: new Date(),
+            type: 'workout_logged',
+            metadata: {
+              exerciseName: setData.exerciseName,
+              weight: setData.weight,
+              weightUnit: setData.weightUnit,
+              reps: setData.reps,
+              isPr: confirmResult.isPr,
+            },
+          },
+        ]);
+
+        if (confirmResult.isPr) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+      } else {
+        // Local-only confirmation
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `Logged! ${setData.exerciseName}: ${setData.weight}${setData.weightUnit} × ${setData.reps}`,
+            timestamp: new Date(),
+            type: 'workout_logged',
+            metadata: {
+              exerciseName: setData.exerciseName,
+              weight: setData.weight,
+              weightUnit: setData.weightUnit,
+              reps: setData.reps,
+            },
+          },
+        ]);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
+      // Update quick editor for next set
+      setQuickEditorData((prev) => ({
+        ...prev,
+        setNumber: prev.setNumber + 1,
+      }));
+
+    } catch (error) {
+      console.error('Failed to log set:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: 'Failed to save set. Please try again.',
+          timestamp: new Date(),
+        },
+      ]);
+    }
+
+    setPendingSet(null);
+    setShowQuickEditor(false);
+  };
+
+  const handleQuickEditorConfirm = () => {
+    const setData: PendingSet = {
+      exerciseName: quickEditorData.exerciseName,
+      exerciseId: pendingSet?.exerciseId,
+      weight: quickEditorData.weight,
+      weightUnit: quickEditorData.weightUnit,
+      reps: quickEditorData.reps,
+      confidence: 1, // Manual confirmation = high confidence
+      transcript: pendingSet?.transcript || 'manual entry',
+    };
+    logSet(setData);
+  };
+
+  const handleQuickEditorDismiss = () => {
+    setShowQuickEditor(false);
+    setPendingSet(null);
   };
 
   const renderMessage = useCallback(({ item }: { item: Message }) => {
     const isUser = item.role === 'user';
+    const isSystem = item.role === 'system';
+
+    if (isSystem) {
+      return (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginVertical: spacing.sm,
+            paddingHorizontal: spacing.lg,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.tint.warning,
+              borderRadius: borderRadius.lg,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.sm,
+            }}
+          >
+            <AlertCircle size={16} color={colors.semantic.warning} />
+            <Text
+              style={{
+                fontSize: fontSize.sm,
+                color: colors.text.secondary,
+                flex: 1,
+              }}
+            >
+              {item.content}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    // Workout logged message style
+    if (item.type === 'workout_logged') {
+      return (
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'flex-start',
+            marginBottom: spacing.sm,
+            paddingHorizontal: spacing.md,
+          }}
+        >
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: colors.semantic.success,
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginRight: spacing.sm,
+            }}
+          >
+            <Dumbbell size={16} color="#FFFFFF" />
+          </View>
+          <View
+            style={{
+              maxWidth: '75%',
+              backgroundColor: colors.tint.success,
+              borderRadius: 18,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: fontSize.base,
+                color: colors.text.primary,
+                fontWeight: fontWeight.medium,
+              }}
+            >
+              {item.content}
+            </Text>
+            {item.metadata?.isPr && (
+              <Text
+                style={{
+                  fontSize: fontSize.sm,
+                  color: colors.semantic.success,
+                  marginTop: 4,
+                  fontWeight: fontWeight.semibold,
+                }}
+              >
+                🎉 New PR!
+              </Text>
+            )}
+          </View>
+        </View>
+      );
+    }
 
     return (
       <View
@@ -190,7 +628,10 @@ export default function ChatScreen() {
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingVertical: spacing.md, paddingBottom: 100 }}
+          contentContainerStyle={{
+            paddingVertical: spacing.md,
+            paddingBottom: showQuickEditor ? 180 : 100,
+          }}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
@@ -224,6 +665,23 @@ export default function ChatScreen() {
           </View>
         )}
 
+        {/* Voice processing indicator */}
+        {voiceState === 'processing' && (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: spacing.sm,
+            }}
+          >
+            <ActivityIndicator size="small" color={colors.accent.blue} />
+            <Text style={{ color: colors.text.tertiary, fontSize: fontSize.sm, marginLeft: spacing.sm }}>
+              Processing voice...
+            </Text>
+          </View>
+        )}
+
         {/* Input */}
         <View
           style={{
@@ -237,24 +695,65 @@ export default function ChatScreen() {
             gap: spacing.sm,
           }}
         >
-          {/* Voice button */}
-          <TouchableOpacity
-            onPress={handleVoicePress}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: isRecording ? colors.accent.red : colors.background.secondary,
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            {isRecording ? (
-              <MicOff size={20} color={colors.text.onAccent} />
-            ) : (
-              <Mic size={20} color={colors.icon.secondary} />
+          {/* Voice button with pulse effect */}
+          <View style={{ position: 'relative' }}>
+            {/* Pulse ring */}
+            {isRecording && (
+              <Animated.View
+                style={[
+                  {
+                    position: 'absolute',
+                    width: 56,
+                    height: 56,
+                    borderRadius: 28,
+                    backgroundColor: colors.accent.red,
+                    left: -6,
+                    top: -6,
+                  },
+                  pulseStyle,
+                ]}
+              />
             )}
-          </TouchableOpacity>
+            <AnimatedTouchable
+              onPress={handleVoicePress}
+              onLongPress={cancelRecording}
+              delayLongPress={500}
+              style={[
+                {
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: isRecording ? colors.accent.red : colors.background.secondary,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                },
+                micButtonStyle,
+              ]}
+              accessibilityLabel={isRecording ? 'Stop recording' : 'Start voice recording'}
+              accessibilityRole="button"
+              accessibilityHint={isRecording ? 'Tap to stop and process voice' : 'Tap to log a set with your voice'}
+            >
+              {isRecording ? (
+                <MicOff size={20} color={colors.text.onAccent} />
+              ) : (
+                <Mic size={20} color={colors.icon.secondary} />
+              )}
+            </AnimatedTouchable>
+          </View>
+
+          {/* Recording duration */}
+          {isRecording && (
+            <Text
+              style={{
+                fontSize: fontSize.sm,
+                color: colors.accent.red,
+                fontWeight: fontWeight.medium,
+                minWidth: 40,
+              }}
+            >
+              {formatDuration(recordingDuration)}
+            </Text>
+          )}
 
           {/* Text input */}
           <TextInput
@@ -269,29 +768,48 @@ export default function ChatScreen() {
             }}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Ask me anything..."
+            placeholder={isRecording ? 'Recording...' : 'Ask me anything...'}
             placeholderTextColor={colors.text.disabled}
             onSubmitEditing={handleSend}
             returnKeyType="send"
+            editable={!isRecording}
           />
 
           {/* Send button */}
           <TouchableOpacity
             onPress={handleSend}
-            disabled={!inputText.trim() || isLoading}
+            disabled={!inputText.trim() || isLoading || isRecording}
             style={{
               width: 44,
               height: 44,
               borderRadius: 22,
-              backgroundColor: inputText.trim() ? colors.accent.blue : colors.background.secondary,
+              backgroundColor: inputText.trim() && !isRecording ? colors.accent.blue : colors.background.secondary,
               justifyContent: 'center',
               alignItems: 'center',
-              opacity: inputText.trim() && !isLoading ? 1 : 0.5,
+              opacity: inputText.trim() && !isLoading && !isRecording ? 1 : 0.5,
             }}
+            accessibilityLabel="Send message"
+            accessibilityRole="button"
           >
-            <Send size={20} color={inputText.trim() ? colors.text.onAccent : colors.icon.disabled} />
+            <Send size={20} color={inputText.trim() && !isRecording ? colors.text.onAccent : colors.icon.disabled} />
           </TouchableOpacity>
         </View>
+
+        {/* Quick Set Editor - shows during active workout */}
+        {isWorkoutActive && showQuickEditor && (
+          <QuickSetEditor
+            exerciseName={quickEditorData.exerciseName}
+            setNumber={quickEditorData.setNumber}
+            weight={quickEditorData.weight}
+            weightUnit={quickEditorData.weightUnit}
+            reps={quickEditorData.reps}
+            onWeightChange={(weight) => setQuickEditorData((prev) => ({ ...prev, weight }))}
+            onRepsChange={(reps) => setQuickEditorData((prev) => ({ ...prev, reps }))}
+            onConfirm={handleQuickEditorConfirm}
+            onDismiss={handleQuickEditorDismiss}
+            isVisible={showQuickEditor}
+          />
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
