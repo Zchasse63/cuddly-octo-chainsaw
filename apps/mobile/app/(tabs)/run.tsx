@@ -1,41 +1,121 @@
-import { View, Text, ScrollView } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Modal, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, MapPin, Clock, Ruler } from 'lucide-react-native';
+import {
+  Play,
+  Pause,
+  Square,
+  MapPin,
+  Clock,
+  Ruler,
+  Heart,
+  Zap,
+  Footprints,
+  History,
+  ChevronDown,
+  Check,
+  TrendingUp,
+  Activity,
+} from 'lucide-react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withRepeat,
+  withSequence,
+  FadeIn,
+} from 'react-native-reanimated';
 import { useTheme } from '../../src/theme/ThemeContext';
-import { Button, Card } from '../../src/components/ui';
+import { Button, Card, Toast } from '../../src/components/ui';
 import { useAuthStore } from '../../src/stores/auth';
+import { api } from '../../src/lib/trpc';
+import { useDistanceUnit, formatDistance, formatPace } from '../../src/stores/profile';
 import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
 
 type RunStatus = 'idle' | 'running' | 'paused';
+type RunType = 'easy' | 'tempo' | 'interval' | 'long_run' | 'recovery' | 'fartlek' | 'hill' | 'race';
 
 interface RunStats {
   distance: number; // meters
   duration: number; // seconds
-  pace: number; // min/km
+  currentPace: number; // seconds per km
+  avgPace: number; // seconds per km
   calories: number;
+  heartRate?: number;
+  cadence?: number;
+  splits: Split[];
 }
+
+interface Split {
+  distance: number; // 1km or 1mi
+  time: number; // seconds for this split
+  pace: number; // seconds per km/mi
+  avgHeartRate?: number;
+}
+
+const RUN_TYPES: { id: RunType; label: string; description: string; color: string }[] = [
+  { id: 'easy', label: 'Easy Run', description: 'Comfortable conversational pace', color: '#4ECDC4' },
+  { id: 'tempo', label: 'Tempo Run', description: 'Comfortably hard sustained effort', color: '#FFE66D' },
+  { id: 'interval', label: 'Intervals', description: 'High intensity with rest periods', color: '#FF6B6B' },
+  { id: 'long_run', label: 'Long Run', description: 'Extended distance at easy pace', color: '#95E1D3' },
+  { id: 'recovery', label: 'Recovery', description: 'Very easy post-workout jog', color: '#A8E6CF' },
+  { id: 'fartlek', label: 'Fartlek', description: 'Varied speed play', color: '#DDA0DD' },
+  { id: 'hill', label: 'Hill Training', description: 'Hill repeats or hilly route', color: '#F4A460' },
+  { id: 'race', label: 'Race', description: 'Competition or time trial', color: '#FFD700' },
+];
 
 export default function RunScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
+  const distanceUnit = useDistanceUnit();
 
   const [status, setStatus] = useState<RunStatus>('idle');
+  const [runType, setRunType] = useState<RunType>('easy');
+  const [showRunTypePicker, setShowRunTypePicker] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [selectedShoeId, setSelectedShoeId] = useState<string | null>(null);
   const [stats, setStats] = useState<RunStats>({
     distance: 0,
     duration: 0,
-    pace: 0,
+    currentPace: 0,
+    avgPace: 0,
     calories: 0,
+    splits: [],
   });
   const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({
+    visible: false,
+    message: '',
+    type: 'success',
+  });
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
-  const lastPosition = useRef<{ lat: number; lon: number } | null>(null);
+  const lastPosition = useRef<{ lat: number; lon: number; timestamp: number } | null>(null);
+  const splitDistance = useRef(0);
+  const splitStartTime = useRef(0);
+  const startTimeRef = useRef<Date | null>(null);
+
+  // Pulse animation for active run
+  const pulseScale = useSharedValue(1);
+
+  // Fetch user's shoes
+  const { data: shoes } = api.running.getShoes.useQuery(undefined, { enabled: !!user });
+
+  // Save run mutation
+  const saveRunMutation = api.running.saveActivity.useMutation({
+    onSuccess: (data) => {
+      setToast({ visible: true, message: 'Run saved!', type: 'success' });
+      router.push(`/run/${data.id}`);
+    },
+    onError: (error) => {
+      setToast({ visible: true, message: error.message, type: 'error' });
+    },
+  });
 
   // Request location permission
   useEffect(() => {
@@ -50,9 +130,17 @@ export default function RunScreen() {
     };
   }, []);
 
+  // Set default shoe
+  useEffect(() => {
+    if (shoes && !selectedShoeId) {
+      const defaultShoe = shoes.find((s: any) => s.isDefault);
+      if (defaultShoe) setSelectedShoeId(defaultShoe.id);
+    }
+  }, [shoes]);
+
   // Haversine formula for distance calculation
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371e3; // Earth's radius in meters
+    const R = 6371e3;
     const phi1 = (lat1 * Math.PI) / 180;
     const phi2 = (lat2 * Math.PI) / 180;
     const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
@@ -75,18 +163,31 @@ export default function RunScreen() {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setStatus('running');
+    startTimeRef.current = new Date();
+    splitStartTime.current = 0;
+    splitDistance.current = 0;
+
+    // Start pulse animation
+    pulseScale.value = withRepeat(
+      withSequence(
+        withSpring(1.05, { damping: 10 }),
+        withSpring(1, { damping: 10 })
+      ),
+      -1,
+      true
+    );
 
     // Start timer
     intervalRef.current = setInterval(() => {
       setStats((prev) => {
         const newDuration = prev.duration + 1;
-        const pace = prev.distance > 0 ? (newDuration / 60) / (prev.distance / 1000) : 0;
-        const calories = Math.round((prev.distance / 1000) * 60); // Rough estimate
+        const avgPace = prev.distance > 0 ? (newDuration / (prev.distance / 1000)) : 0;
+        const calories = Math.round((prev.distance / 1000) * 60);
 
         return {
           ...prev,
           duration: newDuration,
-          pace: Math.round(pace * 100) / 100,
+          avgPace: Math.round(avgPace),
           calories,
         };
       });
@@ -95,12 +196,13 @@ export default function RunScreen() {
     // Start location tracking
     locationSubscription.current = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 1000,
-        distanceInterval: 5,
+        distanceInterval: 3,
       },
       (location) => {
         const { latitude, longitude } = location.coords;
+        const timestamp = location.timestamp;
 
         if (lastPosition.current) {
           const dist = calculateDistance(
@@ -110,13 +212,40 @@ export default function RunScreen() {
             longitude
           );
 
-          setStats((prev) => ({
-            ...prev,
-            distance: prev.distance + dist,
-          }));
+          // Calculate current pace
+          const timeDiff = (timestamp - lastPosition.current.timestamp) / 1000;
+          const currentPace = dist > 0 ? (timeDiff / (dist / 1000)) : 0;
+
+          setStats((prev) => {
+            const newDistance = prev.distance + dist;
+            splitDistance.current += dist;
+
+            // Check for split (1km or 1mi)
+            const splitThreshold = distanceUnit === 'mi' ? 1609.34 : 1000;
+            const newSplits = [...prev.splits];
+
+            if (splitDistance.current >= splitThreshold) {
+              const splitTime = prev.duration - splitStartTime.current;
+              newSplits.push({
+                distance: splitThreshold,
+                time: splitTime,
+                pace: splitTime / (splitThreshold / 1000),
+              });
+              splitDistance.current = splitDistance.current - splitThreshold;
+              splitStartTime.current = prev.duration;
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+
+            return {
+              ...prev,
+              distance: newDistance,
+              currentPace: Math.round(currentPace),
+              splits: newSplits,
+            };
+          });
         }
 
-        lastPosition.current = { lat: latitude, lon: longitude };
+        lastPosition.current = { lat: latitude, lon: longitude, timestamp };
       }
     );
   };
@@ -124,6 +253,7 @@ export default function RunScreen() {
   const pauseRun = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setStatus('paused');
+    pulseScale.value = withSpring(1);
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -142,21 +272,57 @@ export default function RunScreen() {
 
   const stopRun = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    pauseRun();
+
+    if (stats.distance > 100) {
+      setShowSaveModal(true);
+    } else {
+      resetRun();
+    }
+  };
+
+  const resetRun = () => {
     setStatus('idle');
-
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    if (locationSubscription.current) {
-      locationSubscription.current.remove();
-      locationSubscription.current = null;
-    }
-
-    // Reset stats
-    setStats({ distance: 0, duration: 0, pace: 0, calories: 0 });
+    setStats({ distance: 0, duration: 0, currentPace: 0, avgPace: 0, calories: 0, splits: [] });
     lastPosition.current = null;
+    splitDistance.current = 0;
+    splitStartTime.current = 0;
+    startTimeRef.current = null;
+    setShowSaveModal(false);
+  };
+
+  const saveRun = () => {
+    if (!startTimeRef.current) return;
+
+    saveRunMutation.mutate({
+      runType,
+      startedAt: startTimeRef.current.toISOString(),
+      completedAt: new Date().toISOString(),
+      distanceMeters: stats.distance,
+      durationSeconds: stats.duration,
+      avgPaceSecondsPerKm: stats.avgPace,
+      calories: stats.calories,
+      shoeId: selectedShoeId || undefined,
+      splits: stats.splits.map((s, i) => ({
+        splitNumber: i + 1,
+        distanceMeters: s.distance,
+        durationSeconds: s.time,
+        paceSecondsPerKm: s.pace,
+      })),
+    });
+
+    resetRun();
+  };
+
+  const discardRun = () => {
+    Alert.alert(
+      'Discard Run',
+      'Are you sure you want to discard this run?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: resetRun },
+      ]
+    );
   };
 
   const formatDuration = (seconds: number): string => {
@@ -170,31 +336,28 @@ export default function RunScreen() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const formatDistance = (meters: number): string => {
-    if (meters >= 1000) {
-      return `${(meters / 1000).toFixed(2)} km`;
+  const formatPaceDisplay = (secondsPerKm: number): string => {
+    if (!secondsPerKm || secondsPerKm <= 0) return '--:--';
+    let pace = secondsPerKm;
+    if (distanceUnit === 'mi') {
+      pace = secondsPerKm * 1.60934;
     }
-    return `${Math.round(meters)} m`;
+    const minutes = Math.floor(pace / 60);
+    const seconds = Math.round(pace % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const formatPace = (pace: number): string => {
-    if (pace === 0 || !isFinite(pace)) return '--:--';
-    const minutes = Math.floor(pace);
-    const seconds = Math.round((pace - minutes) * 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
-  };
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }));
+
+  const currentRunType = RUN_TYPES.find((t) => t.id === runType)!;
 
   if (!user) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-          <Text
-            style={{
-              fontSize: fontSize.lg,
-              color: colors.text.secondary,
-              textAlign: 'center',
-            }}
-          >
+          <Text style={{ fontSize: fontSize.lg, color: colors.text.secondary, textAlign: 'center' }}>
             Sign in to track your runs
           </Text>
           <View style={{ height: spacing.md }} />
@@ -206,117 +369,162 @@ export default function RunScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={() => setToast({ ...toast, visible: false })}
+      />
+
       <ScrollView contentContainerStyle={{ padding: spacing.md, flexGrow: 1 }}>
         {/* Header */}
-        <View style={{ marginBottom: spacing.lg }}>
-          <Text
-            style={{
-              fontSize: fontSize['3xl'],
-              fontWeight: fontWeight.bold,
-              color: colors.text.primary,
-            }}
-          >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg }}>
+          <Text style={{ fontSize: fontSize['3xl'], fontWeight: fontWeight.bold, color: colors.text.primary }}>
             Run
           </Text>
+          <TouchableOpacity onPress={() => router.push('/run-history')}>
+            <History size={24} color={colors.icon.secondary} />
+          </TouchableOpacity>
         </View>
 
+        {/* Run Type Selector (only when idle) */}
+        {status === 'idle' && (
+          <TouchableOpacity
+            onPress={() => setShowRunTypePicker(true)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              padding: spacing.md,
+              backgroundColor: currentRunType.color + '20',
+              borderRadius: borderRadius.lg,
+              marginBottom: spacing.lg,
+            }}
+          >
+            <Footprints size={24} color={currentRunType.color} />
+            <View style={{ flex: 1, marginLeft: spacing.md }}>
+              <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary }}>
+                {currentRunType.label}
+              </Text>
+              <Text style={{ fontSize: fontSize.sm, color: colors.text.tertiary }}>
+                {currentRunType.description}
+              </Text>
+            </View>
+            <ChevronDown size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
+        )}
+
+        {/* Active Run Type Badge */}
+        {status !== 'idle' && (
+          <View
+            style={{
+              alignSelf: 'center',
+              backgroundColor: currentRunType.color + '20',
+              paddingHorizontal: spacing.sm,
+              paddingVertical: spacing.xs,
+              borderRadius: borderRadius.full,
+              marginBottom: spacing.md,
+            }}
+          >
+            <Text style={{ fontSize: fontSize.sm, color: currentRunType.color, fontWeight: fontWeight.medium }}>
+              {currentRunType.label}
+            </Text>
+          </View>
+        )}
+
         {/* Main Stats */}
-        <Card
-          variant="elevated"
-          style={{ marginBottom: spacing.lg, alignItems: 'center', paddingVertical: spacing.xl }}
-        >
-          <Text
-            style={{
-              fontSize: 64,
-              fontWeight: fontWeight.bold,
-              color: colors.text.primary,
-              fontVariant: ['tabular-nums'],
-            }}
+        <Animated.View style={status === 'running' ? pulseStyle : {}}>
+          <Card
+            variant="elevated"
+            style={{ marginBottom: spacing.lg, alignItems: 'center', paddingVertical: spacing.xl }}
           >
-            {formatDuration(stats.duration)}
-          </Text>
-          <Text
-            style={{
-              fontSize: fontSize.lg,
-              color: colors.text.secondary,
-              marginTop: spacing.xs,
-            }}
-          >
-            Duration
-          </Text>
-        </Card>
+            <Text
+              style={{
+                fontSize: 64,
+                fontWeight: fontWeight.bold,
+                color: status === 'running' ? currentRunType.color : colors.text.primary,
+                fontVariant: ['tabular-nums'],
+              }}
+            >
+              {formatDuration(stats.duration)}
+            </Text>
+            <Text style={{ fontSize: fontSize.lg, color: colors.text.secondary, marginTop: spacing.xs }}>
+              Duration
+            </Text>
+          </Card>
+        </Animated.View>
 
         {/* Secondary Stats */}
-        <View
-          style={{
-            flexDirection: 'row',
-            gap: spacing.sm,
-            marginBottom: spacing.xl,
-          }}
-        >
+        <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md }}>
           <Card style={{ flex: 1 }}>
             <View style={{ alignItems: 'center' }}>
               <Ruler size={24} color={colors.accent.blue} />
-              <Text
-                style={{
-                  fontSize: fontSize.xl,
-                  fontWeight: fontWeight.bold,
-                  color: colors.text.primary,
-                  marginTop: spacing.xs,
-                }}
-              >
-                {formatDistance(stats.distance)}
+              <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
+                {formatDistance(stats.distance, distanceUnit)}
               </Text>
-              <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
-                Distance
-              </Text>
+              <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Distance</Text>
             </View>
           </Card>
 
           <Card style={{ flex: 1 }}>
             <View style={{ alignItems: 'center' }}>
-              <Clock size={24} color={colors.accent.green} />
-              <Text
-                style={{
-                  fontSize: fontSize.xl,
-                  fontWeight: fontWeight.bold,
-                  color: colors.text.primary,
-                  marginTop: spacing.xs,
-                }}
-              >
-                {formatPace(stats.pace)}
+              <Activity size={24} color={currentRunType.color} />
+              <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
+                {formatPaceDisplay(stats.currentPace)}
               </Text>
-              <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
-                Pace
-              </Text>
+              <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Current /{distanceUnit}</Text>
             </View>
           </Card>
 
           <Card style={{ flex: 1 }}>
             <View style={{ alignItems: 'center' }}>
-              <MapPin size={24} color={colors.accent.orange} />
-              <Text
-                style={{
-                  fontSize: fontSize.xl,
-                  fontWeight: fontWeight.bold,
-                  color: colors.text.primary,
-                  marginTop: spacing.xs,
-                }}
-              >
-                {stats.calories}
+              <TrendingUp size={24} color={colors.accent.green} />
+              <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
+                {formatPaceDisplay(stats.avgPace)}
               </Text>
-              <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
-                Calories
-              </Text>
+              <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Avg /{distanceUnit}</Text>
             </View>
           </Card>
         </View>
+
+        {/* Splits Preview */}
+        {stats.splits.length > 0 && (
+          <Card style={{ marginBottom: spacing.lg }}>
+            <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.sm }}>
+              Splits
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+              {stats.splits.map((split, index) => (
+                <View
+                  key={index}
+                  style={{
+                    backgroundColor: colors.background.tertiary,
+                    paddingHorizontal: spacing.sm,
+                    paddingVertical: spacing.xs,
+                    borderRadius: borderRadius.sm,
+                  }}
+                >
+                  <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
+                    {distanceUnit === 'mi' ? 'Mile' : 'KM'} {index + 1}
+                  </Text>
+                  <Text style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: colors.text.primary }}>
+                    {formatPaceDisplay(split.pace)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </Card>
+        )}
 
         {/* Controls */}
         <View style={{ flex: 1, justifyContent: 'flex-end', gap: spacing.md }}>
           {status === 'idle' && (
             <Button onPress={startRun} fullWidth>
-              Start Run
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Play size={20} color={colors.text.onAccent} />
+                <Text style={{ color: colors.text.onAccent, marginLeft: spacing.xs, fontWeight: fontWeight.semibold }}>
+                  Start Run
+                </Text>
+              </View>
             </Button>
           )}
 
@@ -324,12 +532,18 @@ export default function RunScreen() {
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <View style={{ flex: 1 }}>
                 <Button variant="secondary" onPress={pauseRun} fullWidth>
-                  Pause
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Pause size={18} color={colors.text.primary} />
+                    <Text style={{ marginLeft: spacing.xs }}>Pause</Text>
+                  </View>
                 </Button>
               </View>
               <View style={{ flex: 1 }}>
                 <Button variant="outline" onPress={stopRun} fullWidth>
-                  Stop
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Square size={18} color={colors.text.primary} />
+                    <Text style={{ marginLeft: spacing.xs }}>Stop</Text>
+                  </View>
                 </Button>
               </View>
             </View>
@@ -339,12 +553,18 @@ export default function RunScreen() {
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <View style={{ flex: 1 }}>
                 <Button onPress={resumeRun} fullWidth>
-                  Resume
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Play size={18} color={colors.text.onAccent} />
+                    <Text style={{ color: colors.text.onAccent, marginLeft: spacing.xs }}>Resume</Text>
+                  </View>
                 </Button>
               </View>
               <View style={{ flex: 1 }}>
                 <Button variant="outline" onPress={stopRun} fullWidth>
-                  Finish
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Check size={18} color={colors.text.primary} />
+                    <Text style={{ marginLeft: spacing.xs }}>Finish</Text>
+                  </View>
                 </Button>
               </View>
             </View>
@@ -353,13 +573,176 @@ export default function RunScreen() {
 
         {/* Permission warning */}
         {locationPermission === false && (
-          <Card style={{ marginTop: spacing.md, backgroundColor: colors.tint.warning }}>
+          <Card style={{ marginTop: spacing.md, backgroundColor: colors.semantic.warning + '20' }}>
             <Text style={{ color: colors.text.primary, fontSize: fontSize.sm }}>
               Location permission is required to track your runs. Please enable it in settings.
             </Text>
           </Card>
         )}
       </ScrollView>
+
+      {/* Run Type Picker Modal */}
+      <Modal visible={showRunTypePicker} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View
+            style={{
+              backgroundColor: colors.background.primary,
+              borderTopLeftRadius: borderRadius.xl,
+              borderTopRightRadius: borderRadius.xl,
+              padding: spacing.md,
+              maxHeight: '70%',
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md }}>
+              <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary }}>
+                Select Run Type
+              </Text>
+              <TouchableOpacity onPress={() => setShowRunTypePicker(false)}>
+                <Text style={{ fontSize: fontSize.base, color: colors.accent.blue }}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView>
+              {RUN_TYPES.map((type) => (
+                <TouchableOpacity
+                  key={type.id}
+                  onPress={() => {
+                    setRunType(type.id);
+                    setShowRunTypePicker(false);
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: spacing.md,
+                    backgroundColor: runType === type.id ? type.color + '20' : colors.background.secondary,
+                    borderRadius: borderRadius.lg,
+                    marginBottom: spacing.sm,
+                    borderWidth: 2,
+                    borderColor: runType === type.id ? type.color : 'transparent',
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: type.color + '30',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      marginRight: spacing.md,
+                    }}
+                  >
+                    <Footprints size={20} color={type.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary }}>
+                      {type.label}
+                    </Text>
+                    <Text style={{ fontSize: fontSize.sm, color: colors.text.tertiary }}>
+                      {type.description}
+                    </Text>
+                  </View>
+                  {runType === type.id && <Check size={20} color={type.color} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Save Run Modal */}
+      <Modal visible={showSaveModal} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View
+            style={{
+              backgroundColor: colors.background.primary,
+              borderTopLeftRadius: borderRadius.xl,
+              borderTopRightRadius: borderRadius.xl,
+              padding: spacing.lg,
+            }}
+          >
+            <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary, marginBottom: spacing.lg, textAlign: 'center' }}>
+              Save Run?
+            </Text>
+
+            {/* Run Summary */}
+            <Card style={{ marginBottom: spacing.lg }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: fontSize['2xl'], fontWeight: fontWeight.bold, color: colors.text.primary }}>
+                    {formatDistance(stats.distance, distanceUnit)}
+                  </Text>
+                  <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Distance</Text>
+                </View>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: fontSize['2xl'], fontWeight: fontWeight.bold, color: colors.text.primary }}>
+                    {formatDuration(stats.duration)}
+                  </Text>
+                  <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Duration</Text>
+                </View>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: fontSize['2xl'], fontWeight: fontWeight.bold, color: colors.text.primary }}>
+                    {formatPaceDisplay(stats.avgPace)}
+                  </Text>
+                  <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Avg Pace</Text>
+                </View>
+              </View>
+            </Card>
+
+            {/* Shoe Selector */}
+            {shoes && shoes.length > 0 && (
+              <View style={{ marginBottom: spacing.lg }}>
+                <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.sm }}>
+                  Shoe Used
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                    <TouchableOpacity
+                      onPress={() => setSelectedShoeId(null)}
+                      style={{
+                        paddingHorizontal: spacing.md,
+                        paddingVertical: spacing.sm,
+                        borderRadius: borderRadius.md,
+                        backgroundColor: !selectedShoeId ? colors.accent.blue : colors.background.secondary,
+                      }}
+                    >
+                      <Text style={{ color: !selectedShoeId ? colors.text.onAccent : colors.text.secondary }}>
+                        None
+                      </Text>
+                    </TouchableOpacity>
+                    {shoes.map((shoe: any) => (
+                      <TouchableOpacity
+                        key={shoe.id}
+                        onPress={() => setSelectedShoeId(shoe.id)}
+                        style={{
+                          paddingHorizontal: spacing.md,
+                          paddingVertical: spacing.sm,
+                          borderRadius: borderRadius.md,
+                          backgroundColor: selectedShoeId === shoe.id ? colors.accent.blue : colors.background.secondary,
+                        }}
+                      >
+                        <Text style={{ color: selectedShoeId === shoe.id ? colors.text.onAccent : colors.text.secondary }}>
+                          {shoe.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Actions */}
+            <View style={{ gap: spacing.sm }}>
+              <Button onPress={saveRun} loading={saveRunMutation.isPending} fullWidth>
+                Save Run
+              </Button>
+              <Button variant="ghost" onPress={discardRun} fullWidth>
+                Discard
+              </Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
