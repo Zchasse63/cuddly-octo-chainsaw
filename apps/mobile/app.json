@@ -18,8 +18,11 @@
       "bundleIdentifier": "com.voicefit.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "VoiceFit needs microphone access to log your workouts by voice.",
+        "NSSpeechRecognitionUsageDescription": "VoiceFit uses speech recognition to understand your workout commands.",
         "NSLocationWhenInUseUsageDescription": "VoiceFit needs location access to track your runs.",
-        "NSLocationAlwaysUsageDescription": "VoiceFit needs location access to track your runs in the background."
+        "NSLocationAlwaysUsageDescription": "VoiceFit needs location access to track your runs in the background.",
+        "NSSupportsLiveActivities": true,
+        "NSSupportsLiveActivitiesFrequentUpdates": true
       }
     },
     "android": {
@@ -43,6 +46,7 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "./plugins/withLiveActivities",
       [
         "expo-location",
         {
