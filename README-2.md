@@ -3,7 +3,7 @@
   <img src="https://img.shields.io/badge/React%20Native-0.79.6-61dafb" alt="React Native" />
   <img src="https://img.shields.io/badge/Expo-53.0-000020" alt="Expo" />
   <img src="https://img.shields.io/badge/FastAPI-0.120-009688" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/AI-Grok%204%20%7C%20Kimi%20K2-purple" alt="AI" />
+  <img src="https://img.shields.io/badge/AI-Grok%204-purple" alt="AI" />
   <img src="https://img.shields.io/badge/License-Proprietary-red" alt="License" />
 </p>
 
@@ -107,9 +107,9 @@ Traditional fitness apps require tedious manual logging that interrupts your wor
 ┌────────▼────────┐  ┌────────▼────────┐  ┌────────▼────────┐
 │    Supabase     │  │   AI Services   │  │   Wearables     │
 │  PostgreSQL     │  │  Grok 4 Fast    │  │  Terra API      │
-│  Auth           │  │  Kimi K2        │  │  WHOOP API      │
-│  Realtime       │  │  Upstash RAG    │  │  Stryd API      │
-│  Edge Functions │  │  Redis Cache    │  │  Weather API    │
+│  Auth           │  │  Upstash RAG    │  │  WHOOP API      │
+│  Realtime       │  │  Redis Cache    │  │  Stryd API      │
+│  Edge Functions │  │                 │  │  Weather API    │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
@@ -151,8 +151,7 @@ Traditional fitness apps require tedious manual logging that interrupts your wor
 ### AI & ML
 | Service | Model | Purpose |
 |---------|-------|---------|
-| xAI | Grok 4 Fast | AI Coach, program generation |
-| Moonshot | Kimi K2 Turbo | Voice parsing |
+| xAI | Grok 4 Fast | AI Coach, voice parsing, program generation |
 | Upstash | Vector Search | Exercise matching (452 exercises) |
 | Upstash | 41 Namespaces | RAG knowledge base |
 
@@ -254,7 +253,6 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 
 # AI Services
 XAI_API_KEY=your-xai-key
-KIMI_API_KEY=your-kimi-key
 
 # Upstash
 UPSTASH_SEARCH_REST_URL=your-search-url
@@ -541,7 +539,6 @@ This project is proprietary software. All rights reserved.
 ## Acknowledgments
 
 - **xAI** for Grok 4 AI model
-- **Moonshot** for Kimi K2 voice parsing
 - **Supabase** for database and auth infrastructure
 - **Expo** for React Native development
 - **Terra** for wearable aggregation

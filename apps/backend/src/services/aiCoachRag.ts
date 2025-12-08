@@ -3,9 +3,9 @@
  * Uses Upstash Search for knowledge retrieval and exercise cues
  */
 
-import { generateCompletion, streamCompletion, TEMPERATURES } from '../lib/grok';
+import { generateCompletion, streamCompletion, TEMPERATURES } from '../lib/ai';
 import { search, cache } from '../lib/upstash';
-import { SEARCH_INDEXES } from './searchIndexer';
+import { SEARCH_INDEXES, UPSTASH_INDEXES, getIndexesForContext } from './searchIndexer';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../db/schema';
 import { eq, desc, and } from 'drizzle-orm';
@@ -71,30 +71,30 @@ export class RagCoachService {
     const cached = await cache.get<KnowledgeChunk[]>(cacheKey);
     if (cached) return cached;
 
-    // Build filter
-    const filter = category ? `category = "${category}"` : undefined;
-
     try {
-      const results = await search.query({
-        index: SEARCH_INDEXES.KNOWLEDGE_BASE,
+      // Get relevant indexes based on category
+      const indexes = getIndexesForContext({ category });
+
+      const results = await search.queryMultiple({
+        indexes,
         query,
-        topK,
-        filter,
+        topK: topK * 2, // Get more results for filtering
       });
 
       const chunks: KnowledgeChunk[] = results
         .filter((r) => r.score >= minScore)
         .map((r) => {
-          const data = r.data as Record<string, string>;
+          const content = r.content as Record<string, string> | undefined;
           return {
             id: r.id,
-            title: data.title || '',
-            content: data.content || '',
-            category: data.category || '',
-            chunkType: data.chunkType || '',
+            title: content?.title || '',
+            content: content?.text || content?.content || '',
+            category: content?.category || (r.metadata as Record<string, string>)?.category || '',
+            chunkType: content?.type || (r.metadata as Record<string, string>)?.content_type || '',
             score: r.score,
           };
-        });
+        })
+        .slice(0, topK);
 
       // Cache for 10 minutes
       if (chunks.length > 0) {
@@ -110,6 +110,7 @@ export class RagCoachService {
 
   /**
    * Get exercise cues for coaching advice
+   * Queries technique-specific indexes based on exercise name
    */
   async getExerciseCues(
     exerciseIdOrName: string,
@@ -125,30 +126,41 @@ export class RagCoachService {
     const cached = await cache.get<ExerciseCue[]>(cacheKey);
     if (cached) return cached;
 
-    // Build filter
-    let filter: string | undefined;
-    if (cueType) {
-      filter = `cueType = "${cueType}"`;
-    }
-
     try {
-      const results = await search.query({
-        index: SEARCH_INDEXES.EXERCISE_CUES,
-        query: exerciseIdOrName,
-        topK,
-        filter,
+      // Get technique indexes based on exercise name
+      const indexes = getIndexesForContext({ exerciseName: exerciseIdOrName });
+
+      const results = await search.queryMultiple({
+        indexes,
+        query: `${exerciseIdOrName} form technique cue`,
+        topK: topK * 2,
       });
 
-      const cues: ExerciseCue[] = results.map((r) => {
-        const data = r.data as Record<string, string>;
-        return {
-          id: r.id,
-          cueText: data.cueText || '',
-          cueType: data.cueType as ExerciseCue['cueType'],
-          exerciseName: data.exerciseName || '',
-          score: r.score,
-        };
-      });
+      const cues: ExerciseCue[] = results
+        .map((r) => {
+          const content = r.content as Record<string, string> | undefined;
+          const text = content?.text || '';
+
+          // Infer cue type from content
+          let inferredCueType: ExerciseCue['cueType'] = 'execution';
+          if (text.toLowerCase().includes('setup') || text.toLowerCase().includes('position')) {
+            inferredCueType = 'setup';
+          } else if (text.toLowerCase().includes('breath')) {
+            inferredCueType = 'breathing';
+          } else if (text.toLowerCase().includes('fault') || text.toLowerCase().includes('mistake')) {
+            inferredCueType = 'common_mistake';
+          }
+
+          return {
+            id: r.id,
+            cueText: text.slice(0, 300), // Limit text length
+            cueType: (content?.type as ExerciseCue['cueType']) || inferredCueType,
+            exerciseName: content?.exerciseName || exerciseIdOrName,
+            score: r.score,
+          };
+        })
+        .filter((cue) => !cueType || cue.cueType === cueType)
+        .slice(0, topK);
 
       // Cache for 30 minutes
       if (cues.length > 0) {

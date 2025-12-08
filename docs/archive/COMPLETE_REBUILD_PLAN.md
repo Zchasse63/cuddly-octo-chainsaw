@@ -35,7 +35,7 @@ This document provides a complete rebuild plan for VoiceFit, ensuring **every si
 - **45+ database tables** in Supabase
 - **30+ mobile screens** in React Native/Expo
 - **50+ Python services** (40,000+ lines)
-- **3 AI providers** (Grok 4, Kimi K2, OpenAI)
+- **1 AI provider** (Grok 4 via xAI)
 - **11 external integrations** (WHOOP, Terra, Supabase, etc.)
 
 ### Target State
@@ -62,7 +62,7 @@ This document provides a complete rebuild plan for VoiceFit, ensuring **every si
 | **Client State** | Zustand (everything) | Zustand (UI only) |
 | **Offline Storage** | WatermelonDB | Expo SQLite Queue |
 | **Auth Storage** | localStorage (broken) | SecureStore |
-| **AI Providers** | Grok 4 + Kimi K2 + OpenAI | Grok 4 only |
+| **AI Providers** | Grok 4 only | Grok 4 only |
 | **Vector Search** | Upstash Search | Upstash Vector |
 | **Web Apps** | 2 separate Next.js apps | 1 unified Next.js app |
 
@@ -89,7 +89,7 @@ This document provides a complete rebuild plan for VoiceFit, ensuring **every si
 
 | Feature | Status | Phase | Notes |
 |---------|--------|-------|-------|
-| Voice command parsing (Kimi K2) | ✅ Must Have | 1 | Move to Grok 4 |
+| Voice command parsing (Grok 4) | ✅ Must Have | 1 | Using Grok 4 |
 | Voice session management | ✅ Must Have | 1 | Tracks current exercise, last weight |
 | "Same weight" detection | ✅ Must Have | 1 | References previous set |
 | Exercise matching (fuzzy + semantic) | ✅ Must Have | 1 | 452 exercises in DB |
@@ -291,7 +291,7 @@ This document provides a complete rebuild plan for VoiceFit, ensuring **every si
 | Nutrition optimization | 🔮 Future | 7 | Personalized recommendations |
 | Anomaly detection | 🔮 Future | 7 | Unusual patterns flagged |
 | Causal inference | 🔮 Future | 7 | Prove causation vs correlation |
-| Natural language insights | 🔮 Future | 7 | GPT-4 generated explanations |
+| Natural language insights | 🔮 Future | 7 | AI-generated explanations |
 | Weekly summary emails | 🔮 Future | 7 | Automated insights |
 | Proactive AI coach | 🔮 Future | 7 | Push suggestions |
 
@@ -751,7 +751,7 @@ This document provides a complete rebuild plan for VoiceFit, ensuring **every si
 - [ ] Model confidence scoring
 
 #### 7.5 Natural Language Insights (Week 58-60)
-- [ ] GPT-4 insight generation
+- [ ] AI insight generation (Grok 4)
 - [ ] Personalized explanations
 - [ ] Actionable recommendations
 - [ ] Insight prioritization

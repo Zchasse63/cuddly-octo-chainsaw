@@ -421,11 +421,11 @@ export const devicesRouter = router({
           status: cp.syncStatus,
           lastSynced: cp.lastSyncedAt,
         })),
-        pendingOpsCount: Number(pendingOps.rows[0]?.count || 0),
-        conflictsCount: Number(conflicts.rows[0]?.count || 0),
+        pendingOpsCount: Number((pendingOps as unknown as Array<{ count: number }>)[0]?.count || 0),
+        conflictsCount: Number((conflicts as unknown as Array<{ count: number }>)[0]?.count || 0),
         recentErrors,
-        isFullySynced: Number(pendingOps.rows[0]?.count || 0) === 0 &&
-          Number(conflicts.rows[0]?.count || 0) === 0,
+        isFullySynced: Number((pendingOps as unknown as Array<{ count: number }>)[0]?.count || 0) === 0 &&
+          Number((conflicts as unknown as Array<{ count: number }>)[0]?.count || 0) === 0,
       };
     }),
 });

@@ -210,7 +210,7 @@ export const gamificationRouter = router({
           LIMIT ${input.limit}
         `);
 
-        return results.rows;
+        return results as unknown as Array<Record<string, unknown>>;
       }
 
       if (input.type === 'badges') {
@@ -227,7 +227,7 @@ export const gamificationRouter = router({
           LIMIT ${input.limit}
         `);
 
-        return results.rows;
+        return results as unknown as Array<Record<string, unknown>>;
       }
 
       // PRs leaderboard would need the PR history table

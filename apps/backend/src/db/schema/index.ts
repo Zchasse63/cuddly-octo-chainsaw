@@ -55,3 +55,6 @@ export * from './programs';
 
 // Shoe tracking schemas
 export * from './shoes';
+
+// Coach-client relationship schemas
+export * from './coach';

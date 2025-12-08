@@ -1,4 +1,5 @@
 import { Redis } from '@upstash/redis';
+import { Search } from '@upstash/search';
 
 // Upstash Redis client for caching and rate limiting
 export const redis = new Redis({
@@ -6,43 +7,109 @@ export const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
 
-// Upstash Search client for hybrid search
-// Note: Using the REST API directly since @upstash/search may not be available yet
+// Upstash Search client using official SDK
+export const searchClient = new Search({
+  url: process.env.UPSTASH_SEARCH_REST_URL!,
+  token: process.env.UPSTASH_SEARCH_REST_TOKEN!,
+});
+
+// Helper interface for search results
+export interface SearchResult {
+  id: string;
+  score: number;
+  content?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  // Compatibility aliases
+  data?: Record<string, unknown>;
+}
+
+// Wrapper class for backward compatibility with existing code
 export class UpstashSearch {
-  private baseUrl: string;
-  private token: string;
-
-  constructor() {
-    this.baseUrl = process.env.UPSTASH_SEARCH_REST_URL!;
-    this.token = process.env.UPSTASH_SEARCH_REST_TOKEN!;
-  }
-
+  /**
+   * Query a single index
+   */
   async query(options: {
     index: string;
     query: string;
     topK?: number;
     filter?: string;
   }): Promise<SearchResult[]> {
-    const response = await fetch(`${this.baseUrl}/query`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        index: options.index,
-        query: options.query,
-        topK: options.topK || 5,
-        filter: options.filter,
-      }),
+    const index = searchClient.index(options.index);
+    const results = await index.search({
+      query: options.query,
+      limit: options.topK || 5,
+      filter: options.filter,
     });
 
-    if (!response.ok) {
-      throw new Error(`Upstash Search query failed: ${response.statusText}`);
+    // Map SDK results to our SearchResult interface
+    return (results || []).map((result) => {
+      const content = result.content as Record<string, unknown> | undefined;
+      return {
+        id: result.id,
+        score: result.score,
+        content,
+        metadata: result.metadata as Record<string, unknown> | undefined,
+        // Add data as alias for content (backward compat)
+        data: content,
+      };
+    });
+  }
+
+  /**
+   * Query multiple indexes in parallel and merge results
+   * Results are deduplicated by ID and sorted by score
+   */
+  async queryMultiple(options: {
+    indexes: string[];
+    query: string;
+    topK?: number;
+    filter?: string;
+  }): Promise<SearchResult[]> {
+    const { indexes, query, topK = 5, filter } = options;
+
+    // Query all indexes in parallel
+    const promises = indexes.map(async (indexName) => {
+      try {
+        const index = searchClient.index(indexName);
+        const results = await index.search({
+          query,
+          limit: topK,
+          filter,
+        });
+        return results.map((result) => {
+          const content = result.content as Record<string, unknown> | undefined;
+          return {
+            id: result.id,
+            score: result.score,
+            content,
+            metadata: result.metadata as Record<string, unknown> | undefined,
+            data: content,
+            _index: indexName, // Track source index
+          };
+        });
+      } catch (error) {
+        console.error(`Search error for index ${indexName}:`, error);
+        return [];
+      }
+    });
+
+    const allResults = await Promise.all(promises);
+
+    // Flatten and deduplicate by ID (keep highest score)
+    const resultMap = new Map<string, SearchResult>();
+    for (const results of allResults) {
+      for (const result of results) {
+        const existing = resultMap.get(result.id);
+        if (!existing || result.score > existing.score) {
+          resultMap.set(result.id, result);
+        }
+      }
     }
 
-    const data = await response.json();
-    return data.results || [];
+    // Sort by score descending and limit
+    return Array.from(resultMap.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
   }
 
   async upsert(options: {
@@ -50,51 +117,21 @@ export class UpstashSearch {
     id: string;
     data: Record<string, unknown>;
   }): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/upsert`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
+    const index = searchClient.index(options.index);
+    await index.upsert([
+      {
+        id: options.id,
+        content: options.data,
       },
-      body: JSON.stringify({
-        index: options.index,
-        documents: [
-          {
-            id: options.id,
-            ...options.data,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Upstash Search upsert failed: ${response.statusText}`);
-    }
+    ]);
   }
 
   async delete(options: { index: string; id: string }): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/delete`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        index: options.index,
-        ids: [options.id],
-      }),
+    const index = searchClient.index(options.index);
+    await index.delete({
+      ids: [options.id],
     });
-
-    if (!response.ok) {
-      throw new Error(`Upstash Search delete failed: ${response.statusText}`);
-    }
   }
-}
-
-export interface SearchResult {
-  id: string;
-  score: number;
-  data: Record<string, unknown>;
 }
 
 export const search = new UpstashSearch();

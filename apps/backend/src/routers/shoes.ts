@@ -133,7 +133,7 @@ export const shoesRouter = router({
           percentUsed: Math.round((totalMileageMiles / thresholdMiles) * 100),
           milesRemaining: Math.round(Math.max(0, thresholdMiles - totalMileageMiles) * 10) / 10,
         },
-        recentActivities: activities.rows,
+        recentActivities: activities as unknown as Array<Record<string, unknown>>,
       };
     }),
 

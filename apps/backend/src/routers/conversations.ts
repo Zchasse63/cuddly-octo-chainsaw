@@ -22,7 +22,7 @@ export const conversationsRouter = router({
 
       const results = await ctx.db.query.conversations.findMany({
         where: and(...conditions),
-        orderBy: [desc(conversations.lastMessageAt)],
+        orderBy: [desc(conversations.updatedAt)],
         limit: input.limit,
         offset: input.offset,
       });
@@ -68,8 +68,7 @@ export const conversationsRouter = router({
       z.object({
         type: z.enum(['coach', 'workout', 'general']),
         title: z.string().optional(),
-        workoutId: z.string().uuid().optional(),
-        metadata: z.record(z.unknown()).optional(),
+        contextId: z.string().uuid().optional(), // workout_id, program_id, etc.
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -79,8 +78,8 @@ export const conversationsRouter = router({
           userId: ctx.user.id,
           conversationType: input.type,
           title: input.title,
-          workoutId: input.workoutId,
-          metadata: input.metadata,
+          contextType: input.type === 'workout' ? 'workout' : undefined,
+          contextId: input.contextId,
         })
         .returning();
 
@@ -121,11 +120,11 @@ export const conversationsRouter = router({
         })
         .returning();
 
-      // Update conversation's last message timestamp
+      // Update conversation's timestamp and message count
       await ctx.db
         .update(conversations)
         .set({
-          lastMessageAt: new Date(),
+          updatedAt: new Date(),
           messageCount: (conversation.messageCount || 0) + 1,
         })
         .where(eq(conversations.id, input.conversationId));
@@ -133,13 +132,12 @@ export const conversationsRouter = router({
       return message;
     }),
 
-  // Update conversation title/metadata
+  // Update conversation title
   update: protectedProcedure
     .input(
       z.object({
         conversationId: z.string().uuid(),
         title: z.string().optional(),
-        metadata: z.record(z.unknown()).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -147,7 +145,7 @@ export const conversationsRouter = router({
         .update(conversations)
         .set({
           title: input.title,
-          metadata: input.metadata,
+          updatedAt: new Date(),
         })
         .where(
           and(eq(conversations.id, input.conversationId), eq(conversations.userId, ctx.user.id))
@@ -221,7 +219,7 @@ export const conversationsRouter = router({
           eq(conversations.userId, ctx.user.id),
           eq(conversations.isArchived, false)
         ),
-        orderBy: [desc(conversations.lastMessageAt)],
+        orderBy: [desc(conversations.updatedAt)],
         limit: 5,
       });
 

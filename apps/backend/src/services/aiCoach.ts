@@ -1,4 +1,4 @@
-import { generateCompletion, streamCompletion, TEMPERATURES } from '../lib/grok';
+import { generateCompletion, streamCompletion, TEMPERATURES } from '../lib/ai';
 import { z } from 'zod';
 
 // Chat classification result schema
@@ -58,7 +58,10 @@ const OFF_TOPIC_RESPONSES = [
   "I'm all about fitness! Let me know if you want to talk workouts, nutrition, or recovery.",
 ];
 
-// Classify a message
+/**
+ * Classify a message to determine intent.
+ * Uses grok-4-fast for efficient single-turn classification.
+ */
 export async function classifyMessage(message: string): Promise<ClassificationResult> {
   try {
     const response = await generateCompletion({
@@ -66,6 +69,7 @@ export async function classifyMessage(message: string): Promise<ClassificationRe
       userPrompt: `Classify this message: "${message}"`,
       temperature: TEMPERATURES.classification,
       maxTokens: 200,
+      // Use grok-4-fast for simple single-turn classification
       model: 'fast',
     });
 

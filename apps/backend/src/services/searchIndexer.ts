@@ -3,12 +3,138 @@ import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../db/schema';
 
-// Index names for Upstash Search
-export const SEARCH_INDEXES = {
-  EXERCISES: 'exercises',
-  KNOWLEDGE: 'knowledge',
-  EXERCISE_CUES: 'exercise_cues',
+/**
+ * Actual Upstash Search index names (category-based)
+ * These match the indexes in the Upstash dashboard
+ */
+export const UPSTASH_INDEXES = {
+  // Large general-purpose indexes
+  GENERAL: 'general', // 3577 docs - main knowledge base
+  STRUCTURED_KNOWLEDGE: 'structured-knowledge', // 245 docs
+  STRENGTH_AND_HYPERTROPHY: 'strength-and-hypertrophy', // 632 docs
+
+  // Topic-specific indexes
+  HYPERTROPHY: 'hypertrophy', // 38 docs
+  STRENGTH_TRAINING: 'strength-training', // 22 docs
+  NUTRITION_AND_SUPPLEMENTATION: 'nutrition-and-supplementation', // 164 docs
+  NUTRITION: 'nutrition', // 4 docs
+  RECOVERY: 'recovery', // 4 docs
+  RECOVERY_AND_PERFORMANCE: 'recovery-and-performance', // 150 docs
+  FITNESS_ASSESSMENT: 'fitness-assessment', // 150 docs
+
+  // Technique indexes
+  SQUAT_TECHNIQUE: 'squat-technique', // 8 docs
+  STICKING_POINTS: 'sticking-points', // 14 docs
+  MOVEMENT_PATTERNS: 'movement-patterns', // 6 docs
+
+  // Programming indexes
+  PROGRAMMING: 'programming', // 14 docs
+  PROGRAM_TEMPLATES: 'program-templates', // 3 docs
+  PROGRAM_TEMPLATE: 'program-template', // 24 docs
+  POWERLIFTING_PROGRAMS: 'powerlifting-programs', // 24 docs
+  PERIODIZATION_CONCEPTS: 'periodization-concepts', // 3 docs
+  PERIODIZATION_THEORY: 'periodization-theory', // 6 docs
+  AUTOREGULATION: 'autoregulation', // 15 docs
+  FATIGUE_MANAGEMENT: 'fatigue-management', // 10 docs
+
+  // Other
+  BEGINNER_FUNDAMENTALS: 'beginner-fundamentals', // 10 docs
+  INJURY_PREVENTION: 'injury-prevention', // 7 docs
+  INJURY_MANAGEMENT: 'injury-management', // 13 docs
+  ADHERENCE: 'adherence', // 8 docs
+  CALISTHENICS: 'calisthenics', // 11 docs
+  MOBILITY_FLEXIBILITY: 'mobility-flexibility', // 5 docs
 } as const;
+
+/**
+ * Legacy index name mappings for backward compatibility
+ * Maps old code references to new multi-index queries
+ */
+export const SEARCH_INDEXES = {
+  // Legacy names that map to actual indexes
+  EXERCISES: 'general', // Exercise info is in general index
+  KNOWLEDGE: 'general', // General knowledge
+  KNOWLEDGE_BASE: 'general', // Alias for code using KNOWLEDGE_BASE
+  EXERCISE_CUES: 'squat-technique', // Technique cues (will also query sticking-points)
+} as const;
+
+/**
+ * Get relevant indexes for a given query context
+ */
+export function getIndexesForContext(context: {
+  intent?: string;
+  exerciseName?: string;
+  category?: string;
+}): string[] {
+  const indexes: string[] = [];
+  const { intent, exerciseName, category } = context;
+
+  // Always include general as fallback
+  const includeGeneral = true;
+
+  // Map intent to indexes
+  if (intent) {
+    switch (intent) {
+      case 'exercise_question':
+        indexes.push(UPSTASH_INDEXES.STRENGTH_AND_HYPERTROPHY);
+        indexes.push(UPSTASH_INDEXES.MOVEMENT_PATTERNS);
+        break;
+      case 'nutrition':
+        indexes.push(UPSTASH_INDEXES.NUTRITION_AND_SUPPLEMENTATION);
+        indexes.push(UPSTASH_INDEXES.NUTRITION);
+        break;
+      case 'recovery':
+        indexes.push(UPSTASH_INDEXES.RECOVERY_AND_PERFORMANCE);
+        indexes.push(UPSTASH_INDEXES.RECOVERY);
+        break;
+      case 'program_request':
+        indexes.push(UPSTASH_INDEXES.PROGRAMMING);
+        indexes.push(UPSTASH_INDEXES.PROGRAM_TEMPLATES);
+        indexes.push(UPSTASH_INDEXES.PERIODIZATION_CONCEPTS);
+        break;
+    }
+  }
+
+  // Map exercise name to technique indexes
+  if (exerciseName) {
+    const lower = exerciseName.toLowerCase();
+    if (lower.includes('squat')) {
+      indexes.push(UPSTASH_INDEXES.SQUAT_TECHNIQUE);
+    }
+    if (lower.includes('bench') || lower.includes('deadlift') || lower.includes('press')) {
+      indexes.push(UPSTASH_INDEXES.STICKING_POINTS);
+    }
+    indexes.push(UPSTASH_INDEXES.MOVEMENT_PATTERNS);
+  }
+
+  // Map category filter
+  if (category) {
+    switch (category) {
+      case 'strength':
+        indexes.push(UPSTASH_INDEXES.STRENGTH_TRAINING);
+        indexes.push(UPSTASH_INDEXES.STRENGTH_AND_HYPERTROPHY);
+        break;
+      case 'hypertrophy':
+        indexes.push(UPSTASH_INDEXES.HYPERTROPHY);
+        indexes.push(UPSTASH_INDEXES.STRENGTH_AND_HYPERTROPHY);
+        break;
+      case 'nutrition':
+        indexes.push(UPSTASH_INDEXES.NUTRITION_AND_SUPPLEMENTATION);
+        break;
+      case 'recovery':
+        indexes.push(UPSTASH_INDEXES.RECOVERY_AND_PERFORMANCE);
+        break;
+    }
+  }
+
+  // Always include general for broad coverage
+  if (includeGeneral && !indexes.includes(UPSTASH_INDEXES.GENERAL)) {
+    indexes.push(UPSTASH_INDEXES.GENERAL);
+  }
+
+  // Dedupe and limit to 3 indexes for performance
+  return Array.from(new Set(indexes)).slice(0, 3);
+}
 
 type IndexName = typeof SEARCH_INDEXES[keyof typeof SEARCH_INDEXES];
 

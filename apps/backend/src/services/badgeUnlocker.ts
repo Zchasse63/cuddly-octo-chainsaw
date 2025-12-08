@@ -447,7 +447,8 @@ export class BadgeUnlocker {
 
     // Map exercise names to keys
     const exerciseMaxes: Record<string, number> = {};
-    for (const row of exerciseMaxesResult.rows) {
+    const exerciseRows = Array.isArray(exerciseMaxesResult) ? exerciseMaxesResult : (exerciseMaxesResult?.rows || []);
+    for (const row of exerciseRows) {
       const name = row.exercise_name?.toLowerCase() || '';
       if (name.includes('bench')) {
         exerciseMaxes['bench_press'] = row.max_weight || 0;
@@ -466,20 +467,31 @@ export class BadgeUnlocker {
       }
     }
 
+    // Convert hybrid week booleans (database may return as strings, booleans, or 1/0)
+    const hybridRows = Array.isArray(hybridWeekResult) ? hybridWeekResult : (hybridWeekResult?.rows || []);
+    const hybridRow = hybridRows[0] || {};
+    const hasWorkout = Boolean(hybridRow.has_workout);
+    const hasRun = Boolean(hybridRow.has_run);
+
+    // Helper to get first row from result (handles both array and .rows format)
+    const getFirstRow = (result: any) => {
+      const rows = Array.isArray(result) ? result : (result?.rows || []);
+      return rows[0] || {};
+    };
+
     return {
-      workoutCount: parseInt(workoutCountResult.rows[0]?.count || '0'),
-      totalVolume: parseFloat(volumeResult.rows[0]?.volume || '0'),
-      prCount: parseInt(prCountResult.rows[0]?.count || '0'),
-      totalRunDistance: parseFloat(runStatsResult.rows[0]?.total_distance || '0'),
+      workoutCount: parseInt(getFirstRow(workoutCountResult)?.count || '0'),
+      totalVolume: parseFloat(getFirstRow(volumeResult)?.volume || '0'),
+      prCount: parseInt(getFirstRow(prCountResult)?.count || '0'),
+      totalRunDistance: parseFloat(getFirstRow(runStatsResult)?.total_distance || '0'),
       workoutStreak,
       runStreak,
       weeklyGoalStreak: 0, // Would need more complex calculation
       runningPRs: runningPRsMap,
       exerciseMaxes,
-      programsCompleted: parseInt(programsResult.rows[0]?.count || '0'),
+      programsCompleted: parseInt(getFirstRow(programsResult)?.count || '0'),
       activeMonths: 0, // Would need more complex calculation
-      hasHybridWeek:
-        hybridWeekResult.rows[0]?.has_workout && hybridWeekResult.rows[0]?.has_run,
+      hasHybridWeek: hasWorkout && hasRun,
     };
   }
 }

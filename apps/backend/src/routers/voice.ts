@@ -118,7 +118,7 @@ export const voiceRouter = router({
           AND exercise_id = ${input.exerciseId}
       `);
 
-      const maxExisting = (existingPr.rows[0] as any)?.max_1rm || 0;
+      const maxExisting = ((existingPr as unknown as Array<{ max_1rm: number }>)[0])?.max_1rm || 0;
       const isPr = estimated1rm !== null && estimated1rm > maxExisting;
 
       // Insert the set
