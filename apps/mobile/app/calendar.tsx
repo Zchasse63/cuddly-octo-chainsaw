@@ -53,14 +53,14 @@ export default function CalendarScreen() {
   }, [currentDate]);
 
   // Fetch calendar entries for the visible range
-  const { data: calendarEntries, refetch } = api.calendar.getRange.useQuery({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+  const { data: calendarEntries, refetch } = api.calendar.getEntries.useQuery({
+    startDate: startDate.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0],
   });
 
   // Fetch scheduled items for selected date
-  const { data: selectedDayItems } = api.calendar.getDay.useQuery(
-    { date: selectedDate?.toISOString() || '' },
+  const { data: selectedDayItems } = api.calendar.getToday.useQuery(
+    undefined,
     { enabled: !!selectedDate }
   );
 
@@ -89,7 +89,7 @@ export default function CalendarScreen() {
         isToday: current.getTime() === today.getTime(),
         hasWorkout: entry?.activityType === 'strength' || entry?.activityType === 'crossfit',
         hasRun: entry?.activityType === 'running',
-        isRestDay: entry?.isRestDay || false,
+        isRestDay: entry?.activityType === 'custom' && entry?.title?.toLowerCase().includes('rest'),
         isCompleted: entry?.status === 'completed',
       });
 

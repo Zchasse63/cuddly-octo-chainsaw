@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { db } from '../../db';
 import { users, userProfiles, workouts, exercises } from '../../db/schema';
@@ -492,7 +492,7 @@ describe('Tools E2E Integration Tests', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools as any,
         prompt: 'Tell me about my profile',
       });
@@ -506,7 +506,7 @@ describe('Tools E2E Integration Tests', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools as any,
         prompt: 'What should I train today?',
       });
@@ -520,7 +520,7 @@ describe('Tools E2E Integration Tests', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools as any,
         prompt: 'Show me my last 5 workouts',
       });
@@ -534,7 +534,7 @@ describe('Tools E2E Integration Tests', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools as any,
         prompt: 'Find exercises for chest',
       });
@@ -548,7 +548,7 @@ describe('Tools E2E Integration Tests', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools as any,
         prompt: 'What injuries do I have?',
       });
@@ -562,7 +562,7 @@ describe('Tools E2E Integration Tests', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools as any,
         prompt: 'How do I do a squat with proper form?',
       });
@@ -576,7 +576,7 @@ describe('Tools E2E Integration Tests', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 5,
+        stopWhen: stepCountIs(5),
         tools: athleteTools as any,
         prompt: 'Should I train today? Check my readiness and what workout is scheduled.',
       });

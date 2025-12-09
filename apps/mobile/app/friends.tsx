@@ -31,16 +31,14 @@ export default function FriendsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Fetch friends list
-  const { data: friends, refetch: refetchFriends } = api.social.getFriends.useQuery();
+  const { data: friends, refetch: refetchFriends } = api.social.getFriends.useQuery({});
 
   // Fetch friend requests
-  const { data: requests, refetch: refetchRequests } = api.social.getFriendRequests.useQuery();
+  const { data: requests, refetch: refetchRequests } = api.social.getPendingRequests.useQuery();
 
-  // Search users
-  const { data: searchResults } = api.social.searchUsers.useQuery(
-    { query: searchQuery },
-    { enabled: searchQuery.length >= 2 }
-  );
+  // Search users - TODO: implement user search in backend
+  // For now, search results will be empty
+  const searchResults: Array<{ id: string; name: string; hasPendingRequest: boolean }> = [];
 
   // Send friend request mutation
   const sendRequestMutation = api.social.sendFriendRequest.useMutation({
@@ -55,8 +53,8 @@ export default function FriendsScreen() {
     },
   });
 
-  // Decline request mutation
-  const declineMutation = api.social.declineFriendRequest.useMutation({
+  // Decline request mutation - use removeFriend instead
+  const declineMutation = api.social.removeFriend.useMutation({
     onSuccess: () => refetchRequests(),
   });
 
@@ -163,7 +161,7 @@ export default function FriendsScreen() {
         </View>
         <View style={{ flexDirection: 'row', gap: spacing.xs }}>
           <TouchableOpacity
-            onPress={() => declineMutation.mutate({ requestId: item.id })}
+            onPress={() => declineMutation.mutate({ friendId: item.userId })}
             style={{
               width: 36,
               height: 36,
@@ -176,7 +174,7 @@ export default function FriendsScreen() {
             <X size={18} color={colors.semantic.error} />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => acceptMutation.mutate({ requestId: item.id })}
+            onPress={() => acceptMutation.mutate({ friendId: item.userId })}
             style={{
               width: 36,
               height: 36,
@@ -260,7 +258,7 @@ export default function FriendsScreen() {
           ) : (
             <Button
               size="sm"
-              onPress={() => sendRequestMutation.mutate({ userId: item.id })}
+              onPress={() => sendRequestMutation.mutate({ friendId: item.id })}
               disabled={sendRequestMutation.isPending}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>

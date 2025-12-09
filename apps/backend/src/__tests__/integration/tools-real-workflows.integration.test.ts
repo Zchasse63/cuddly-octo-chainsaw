@@ -11,12 +11,12 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import { db } from '../../db';
 import { workouts, workoutSets, personalRecords, injuries, trainingPrograms } from '../../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { xai, TEMPERATURES } from '../../lib/ai';
-import { ToolContext, collectTools } from '../../tools/registry';
+import { ToolContext, collectTools, AnyTool } from '../../tools/registry';
 import { getAllAthleteTools } from '../../tools/athlete';
 import { getAllCoachTools } from '../../tools/coach';
 import {
@@ -27,6 +27,16 @@ import {
   assertInRange,
   SeededTestUsers,
 } from './test-factory';
+
+// Helper to execute tools with AI SDK v5 signature (input, options)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const exec = async <T = any>(tool: AnyTool | undefined, input: any): Promise<T> => {
+  if (!tool || !tool.execute) {
+    throw new Error('Tool or execute function is undefined');
+  }
+  // AI SDK v5 execute signature: (input, options) where options has toolCallId and messages
+  return tool.execute(input, { toolCallId: 'test-call-id', messages: [] }) as Promise<T>;
+};
 
 const GROK_TIMEOUT = 90000;
 
@@ -441,7 +451,7 @@ describe('Real Workflow: AI Multi-Turn Conversations', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 5,
+        stopWhen: stepCountIs(5),
         tools: athleteTools,
         prompt: 'You MUST use tools to answer. What should I train today? Call getTodaysWorkout or getActiveProgram.',
       });
@@ -457,12 +467,14 @@ describe('Real Workflow: AI Multi-Turn Conversations', () => {
         );
         expect(hasRelevantTool).toBe(true);
 
-        // Verify tool results contain actual data (filter out undefined results)
-        const validResults = result.toolResults.filter(tr => tr.result !== undefined);
+        // Verify tool results contain actual data (filter out undefined outputs)
+        // AI SDK v5: toolResults use 'output' instead of 'result'
+        const validResults = result.toolResults.filter(tr => (tr as any).output !== undefined);
 
         for (const toolResult of validResults) {
-          if (typeof toolResult.result === 'object' && toolResult.result !== null) {
-            expect((toolResult.result as any).success).toBe(true);
+          const output = (toolResult as any).output;
+          if (typeof output === 'object' && output !== null) {
+            expect(output.success).toBe(true);
           }
         }
       } else {
@@ -475,7 +487,7 @@ describe('Real Workflow: AI Multi-Turn Conversations', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools,
         prompt: 'Show me my recent workouts',
       });
@@ -485,12 +497,13 @@ describe('Real Workflow: AI Multi-Turn Conversations', () => {
       expect(toolNames).toContain('getRecentWorkouts');
 
       // Verify the tool returned our actual workout data
+      // AI SDK v5: toolResults use 'output' instead of 'result'
       const workoutToolResult = result.toolResults.find(
         tr => tr.toolName === 'getRecentWorkouts'
       );
       expect(workoutToolResult).toBeDefined();
 
-      const data = (workoutToolResult?.result as any)?.data;
+      const data = ((workoutToolResult as any)?.output as any)?.data;
       if (data?.workouts) {
         expect(data.workouts.length).toBe(3);
         expect(data.workouts[0].name).toContain('Push Day');
@@ -501,7 +514,7 @@ describe('Real Workflow: AI Multi-Turn Conversations', () => {
       const result = await generateText({
         model: xai('grok-4-fast'),
         temperature: TEMPERATURES.creative,
-        maxSteps: 3,
+        stopWhen: stepCountIs(3),
         tools: athleteTools,
         prompt: 'You MUST call getActiveProgram tool. How is my training program going?',
       });
@@ -517,11 +530,12 @@ describe('Real Workflow: AI Multi-Turn Conversations', () => {
         expect(hasRelevantTool).toBe(true);
 
         // Verify program data is returned if getActiveProgram was called
+        // AI SDK v5: toolResults use 'output' instead of 'result'
         const programToolResult = result.toolResults.find(
-          tr => tr.toolName === 'getActiveProgram' && tr.result !== undefined
+          tr => tr.toolName === 'getActiveProgram' && (tr as any).output !== undefined
         );
         if (programToolResult) {
-          const data = (programToolResult.result as any)?.data;
+          const data = ((programToolResult as any).output as any)?.data;
           if (data) {
             expect(data.hasActiveProgram).toBe(true);
             expect(data.program?.name).toBe('Hypertrophy Program');
@@ -579,7 +593,7 @@ describe('Real Workflow: Coach Tools', () => {
       const premiumContext: ToolContext = { db, userId: clientUserId, userRole: 'premium' };
       const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
 
-      const result = await premiumCoachTools.getClientList.execute({ status: 'all' });
+      const result = await exec(premiumCoachTools.getClientList, { status: 'all' });
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('PERMISSION_DENIED');

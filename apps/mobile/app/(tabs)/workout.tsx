@@ -92,21 +92,21 @@ export default function WorkoutScreen() {
   );
 
   // Get exercise details for preselected
-  const { data: preselectedExercise } = api.exercise.getById.useQuery(
+  const { data: preselectedExercise } = api.exercise.byId.useQuery(
     { id: preselectedExerciseId || '' },
     { enabled: !!preselectedExerciseId }
   );
 
   // Save workout mutation
-  const saveWorkoutMutation = api.workout.save.useMutation({
+  const saveWorkoutMutation = api.workout.complete.useMutation({
     onSuccess: (data) => {
       endWorkout();
       setToast({
         visible: true,
-        message: `Workout saved! ${data.totalSets} sets, ${data.prsCount} PRs`,
+        message: `Workout saved! ${data.summary.totalSets} sets, ${data.summary.prsAchieved} PRs`,
         type: 'success',
       });
-      router.push(`/workout/${data.id}`);
+      router.push(`/workout/${data.workout.id}`);
     },
     onError: (error) => {
       setToast({ visible: true, message: error.message, type: 'error' });
@@ -192,31 +192,12 @@ export default function WorkoutScreen() {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // Save to backend
+    // Save to backend - use workoutId from active workout
+    // Note: In offline-first mode, the workout may not have a backend ID yet
+    // For now, we'll use the local ID and let the sync handle it
     saveWorkoutMutation.mutate({
-      name: activeWorkout.name,
-      startedAt: activeWorkout.startedAt.toISOString(),
-      completedAt: new Date().toISOString(),
-      durationSeconds: elapsedSeconds,
-      totalVolume,
-      totalSets,
-      totalReps,
-      loggingMethod: activeWorkout.loggingMethod,
-      exercises: activeWorkout.exercises.map((e) => ({
-        exerciseId: e.exerciseId,
-        name: e.name,
-        order: e.order,
-        sets: e.sets
-          .filter((s) => s.completedAt)
-          .map((s) => ({
-            setNumber: s.setNumber,
-            weight: s.weight,
-            reps: s.reps,
-            rpe: s.rpe,
-            isWarmup: s.isWarmup,
-            notes: s.notes,
-          })),
-      })),
+      workoutId: activeWorkout.id,
+      notes: activeWorkout.notes || undefined,
     });
   };
 

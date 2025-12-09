@@ -27,6 +27,7 @@ import {
   getSeededTestUsers,
   getSeededCoachClients,
   SeededTestUsers,
+  TestUser,
 } from './test-factory';
 
 // Timeouts

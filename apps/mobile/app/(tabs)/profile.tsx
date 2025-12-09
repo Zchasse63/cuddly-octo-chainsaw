@@ -32,8 +32,8 @@ export default function ProfileScreen() {
 
   // Get user profile and stats
   const { data: profile } = api.auth.me.useQuery(undefined, { enabled: !!user });
-  const { data: stats } = api.gamification.getStats.useQuery(undefined, { enabled: !!user });
-  const { data: badges } = api.gamification.getUserBadges.useQuery(undefined, { enabled: !!user });
+  const { data: stats } = api.gamification.getStreaks.useQuery(undefined, { enabled: !!user });
+  const { data: badges } = api.gamification.getBadges.useQuery(undefined, { enabled: !!user });
 
   const handleSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -196,19 +196,19 @@ export default function ProfileScreen() {
         >
           <StatCard
             icon={<Activity size={20} color={colors.accent.blue} />}
-            value={stats?.totalWorkouts?.toString() || '0'}
+            value={stats?.find((s: { streakType: string }) => s.streakType === 'workout')?.currentStreak?.toString() || '0'}
             label="Workouts"
             colors={colors}
           />
           <StatCard
             icon={<Flame size={20} color="#FF6B6B" />}
-            value={stats?.currentStreak?.toString() || '0'}
+            value={stats?.find((s: { streakType: string }) => s.streakType === 'logging')?.currentStreak?.toString() || '0'}
             label="Day Streak"
             colors={colors}
           />
           <StatCard
             icon={<TrendingUp size={20} color="#4ECDC4" />}
-            value={stats?.prsThisMonth?.toString() || '0'}
+            value={stats?.find((s: { streakType: string }) => s.streakType === 'running')?.currentStreak?.toString() || '0'}
             label="PRs"
             colors={colors}
           />

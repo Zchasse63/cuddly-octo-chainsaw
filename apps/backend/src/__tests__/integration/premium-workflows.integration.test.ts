@@ -20,6 +20,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { generateText } from 'ai';
 import { db } from '../../db';
+import { ProgramQuestionnaireData } from '../../db/schema';
 import { xai, TEMPERATURES } from '../../lib/ai';
 import { search } from '../../lib/upstash';
 import { SEARCH_INDEXES } from '../../services/searchIndexer';

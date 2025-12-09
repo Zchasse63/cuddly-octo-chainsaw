@@ -40,7 +40,7 @@ describe('AI SDK Client', () => {
         model: xai(GROK_MODELS.fast),
         prompt: 'Say "hello" and nothing else.',
         temperature: TEMPERATURES.parsing,
-        maxTokens: 10,
+        maxOutputTokens: 10,
       });
 
       expect(result.text).toBeDefined();
@@ -53,7 +53,7 @@ describe('AI SDK Client', () => {
         system: 'You are a helpful assistant. Respond with exactly one word.',
         prompt: 'What is 2+2?',
         temperature: TEMPERATURES.parsing,
-        maxTokens: 10,
+        maxOutputTokens: 10,
       });
 
       expect(result.text).toBeDefined();
@@ -80,7 +80,7 @@ describe('AI SDK Client', () => {
         model: xai(GROK_MODELS.fast),
         prompt: 'Say "streaming works" and nothing else.',
         temperature: TEMPERATURES.parsing,
-        maxTokens: 20,
+        maxOutputTokens: 20,
       });
 
       const chunks: string[] = [];
@@ -101,13 +101,13 @@ describe('AI SDK Client', () => {
           model: xai(GROK_MODELS.fast),
           prompt: 'What is 5 + 5? Answer with just the number.',
           temperature: TEMPERATURES.parsing,
-          maxTokens: 5,
+          maxOutputTokens: 5,
         }),
         generateText({
           model: xai(GROK_MODELS.fast),
           prompt: 'What is 5 + 5? Answer with just the number.',
           temperature: TEMPERATURES.parsing,
-          maxTokens: 5,
+          maxOutputTokens: 5,
         }),
       ]);
 

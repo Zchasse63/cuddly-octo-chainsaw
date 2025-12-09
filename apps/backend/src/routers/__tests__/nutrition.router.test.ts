@@ -148,14 +148,15 @@ describe('Nutrition Router', () => {
 
   describe('Daily Totals', () => {
     const calculateDailyTotals = (meals: Array<{ calories?: number; protein?: number; carbs?: number; fat?: number }>) => {
+      const initial = { calories: 0, protein: 0, carbs: 0, fat: 0 };
       return meals.reduce(
         (acc, meal) => ({
-          calories: acc.calories + (meal.calories || 0),
-          protein: acc.protein + (meal.protein || 0),
-          carbs: acc.carbs + (meal.carbs || 0),
-          fat: acc.fat + (meal.fat || 0),
+          calories: (acc.calories ?? 0) + (meal.calories ?? 0),
+          protein: (acc.protein ?? 0) + (meal.protein ?? 0),
+          carbs: (acc.carbs ?? 0) + (meal.carbs ?? 0),
+          fat: (acc.fat ?? 0) + (meal.fat ?? 0),
         }),
-        { calories: 0, protein: 0, carbs: 0, fat: 0 }
+        initial
       );
     };
 

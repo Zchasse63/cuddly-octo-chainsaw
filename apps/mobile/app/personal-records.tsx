@@ -26,7 +26,7 @@ export default function PersonalRecordsScreen() {
   const [category, setCategory] = useState<PRCategory>('all');
 
   // Fetch PRs
-  const { data: strengthPRs } = api.gamification.getPersonalRecords.useQuery();
+  const { data: strengthPRs } = api.workout.prs.useQuery({});
   const { data: runningPRs } = api.running.getPRs.useQuery();
 
   const formatDate = (date: string) => {

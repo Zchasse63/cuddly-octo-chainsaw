@@ -146,8 +146,8 @@ export const AI_CONFIG = {
   // Longform model for program generation (grok-3-fast)
   longform: xai(MODELS.longform),
 
-  // Tool calling limits (prevent infinite loops)
-  maxSteps: 10,
+  // Tool calling limits (prevent infinite loops) - use with stepCountIs()
+  defaultStepLimit: 10,
 
   // Request timeout in milliseconds
   timeout: 120000, // 2 minutes for standard requests

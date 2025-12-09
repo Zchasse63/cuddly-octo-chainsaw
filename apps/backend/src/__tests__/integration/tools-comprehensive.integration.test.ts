@@ -16,10 +16,20 @@ import { db } from '../../db';
 import { users, userProfiles, workouts, exercises, injuries, generatedPrograms } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { xai, TEMPERATURES } from '../../lib/ai';
-import { ToolContext, collectTools } from '../../tools/registry';
+import { ToolContext, collectTools, AnyTool } from '../../tools/registry';
 import { getAllAthleteTools } from '../../tools/athlete';
 import { getAllCoachTools } from '../../tools/coach';
 import { getSeededTestUsers, SeededTestUsers } from './test-factory';
+
+// Helper to execute tools with AI SDK v5 signature (input, options)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const exec = async <T = any>(tool: AnyTool | undefined, input: any): Promise<T> => {
+  if (!tool || !tool.execute) {
+    throw new Error('Tool or execute function is undefined');
+  }
+  // AI SDK v5 execute signature: (input, options) where options has toolCallId and messages
+  return tool.execute(input, { toolCallId: 'test-call-id', messages: [] }) as Promise<T>;
+};
 
 const GROK_TIMEOUT = 90000; // 90s for multi-turn AI calls
 
@@ -56,7 +66,7 @@ describe('Comprehensive Tool E2E Tests', () => {
   describe('Category 1: User Profile Tools', () => {
     describe('Tool 1: getUserProfile', () => {
       it('happy path: returns complete user profile', async () => {
-        const result = await athleteTools.getUserProfile.execute({});
+        const result = await exec(athleteTools.getUserProfile, {});
         expect(result.success).toBe(true);
         expect(result.data.name).toBe('Premium Tier Athlete');
         expect(result.data.experienceLevel).toBe('intermediate');
@@ -64,40 +74,40 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('edge case: profile has all optional fields', async () => {
-        const result = await athleteTools.getUserProfile.execute({});
+        const result = await exec(athleteTools.getUserProfile, {});
         expect(result.success).toBe(true);
         // Check for optional fields that may or may not be present
         expect(result.data.preferredWeightUnit === undefined || typeof result.data.preferredWeightUnit === 'string').toBe(true);
       });
 
       it('returns correct data types', async () => {
-        const result = await athleteTools.getUserProfile.execute({});
+        const result = await exec(athleteTools.getUserProfile, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.name).toBe('string');
         expect(Array.isArray(result.data.goals)).toBe(true);
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getUserProfile.execute({});
+        const result = await exec(freeTools.getUserProfile, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 2: getUserPreferences', () => {
       it('happy path: returns user preferences', async () => {
-        const result = await athleteTools.getUserPreferences.execute({});
+        const result = await exec(athleteTools.getUserPreferences, {});
         expect(result.success).toBe(true);
         expect(result.data.preferredWeightUnit).toBe('lbs');
       });
 
       it('edge case: returns equipment list', async () => {
-        const result = await athleteTools.getUserPreferences.execute({});
+        const result = await exec(athleteTools.getUserPreferences, {});
         expect(result.success).toBe(true);
         expect(Array.isArray(result.data.preferredEquipment)).toBe(true);
       });
 
       it('returns exercises to avoid as array', async () => {
-        const result = await athleteTools.getUserPreferences.execute({});
+        const result = await exec(athleteTools.getUserPreferences, {});
         expect(result.success).toBe(true);
         if (result.data.exercisesToAvoid) {
           expect(Array.isArray(result.data.exercisesToAvoid)).toBe(true);
@@ -105,81 +115,81 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getUserPreferences.execute({});
+        const result = await exec(freeTools.getUserPreferences, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 3: getActiveInjuries', () => {
       it('happy path: returns injury status', async () => {
-        const result = await athleteTools.getActiveInjuries.execute({});
+        const result = await exec(athleteTools.getActiveInjuries, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.hasActiveInjuries).toBe('boolean');
       });
 
       it('edge case: returns hasActiveInjuries boolean', async () => {
-        const result = await athleteTools.getActiveInjuries.execute({});
+        const result = await exec(athleteTools.getActiveInjuries, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.hasActiveInjuries).toBe('boolean');
       });
 
       it('returns activeInjuries field', async () => {
-        const result = await athleteTools.getActiveInjuries.execute({});
+        const result = await exec(athleteTools.getActiveInjuries, {});
         expect(result.success).toBe(true);
         // activeInjuries is a string (text) or null, not an array
         expect(result.data.activeInjuries === null || typeof result.data.activeInjuries === 'string').toBe(true);
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getActiveInjuries.execute({});
+        const result = await exec(freeTools.getActiveInjuries, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 4: getUserStreaks', () => {
       it('happy path: returns streak data', async () => {
-        const result = await athleteTools.getUserStreaks.execute({});
+        const result = await exec(athleteTools.getUserStreaks, {});
         expect(result.success).toBe(true);
         expect(result.data).toHaveProperty('workoutStreak');
       });
 
       it('edge case: new user has zero streaks', async () => {
-        const result = await athleteTools.getUserStreaks.execute({});
+        const result = await exec(athleteTools.getUserStreaks, {});
         expect(result.success).toBe(true);
         expect(result.data.workoutStreak.current).toBe(0);
       });
 
       it('returns all streak types', async () => {
-        const result = await athleteTools.getUserStreaks.execute({});
+        const result = await exec(athleteTools.getUserStreaks, {});
         expect(result.data).toHaveProperty('workoutStreak');
         expect(result.data).toHaveProperty('loggingStreak');
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getUserStreaks.execute({});
+        const result = await exec(freeTools.getUserStreaks, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 5: getUserBadges', () => {
       it('happy path: returns badge list with default category', async () => {
-        const result = await athleteTools.getUserBadges.execute({ category: 'all' });
+        const result = await exec(athleteTools.getUserBadges, { category: 'all' });
         expect(result.success).toBe(true);
         expect(Array.isArray(result.data.badges)).toBe(true);
       });
 
       it('parameter variation: filter by strength category', async () => {
-        const result = await athleteTools.getUserBadges.execute({ category: 'strength' });
+        const result = await exec(athleteTools.getUserBadges, { category: 'strength' });
         expect(result.success).toBe(true);
       });
 
       it('parameter variation: filter by running category', async () => {
-        const result = await athleteTools.getUserBadges.execute({ category: 'running' });
+        const result = await exec(athleteTools.getUserBadges, { category: 'running' });
         expect(result.success).toBe(true);
       });
 
       it('edge case: new user has empty badges', async () => {
-        const result = await athleteTools.getUserBadges.execute({ category: 'all' });
+        const result = await exec(athleteTools.getUserBadges, { category: 'all' });
         expect(result.success).toBe(true);
         expect(result.data.badges.length).toBeGreaterThanOrEqual(0);
       });
@@ -192,13 +202,13 @@ describe('Comprehensive Tool E2E Tests', () => {
   describe('Category 2: Workout Tools', () => {
     describe('Tool 6: getTodaysWorkout', () => {
       it('happy path: returns workout status', async () => {
-        const result = await athleteTools.getTodaysWorkout.execute({});
+        const result = await exec(athleteTools.getTodaysWorkout, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.hasScheduledWorkout).toBe('boolean');
       });
 
       it('edge case: user without program gets no workout', async () => {
-        const result = await athleteTools.getTodaysWorkout.execute({});
+        const result = await exec(athleteTools.getTodaysWorkout, {});
         expect(result.success).toBe(true);
         // New user without program
         if (!result.data.hasScheduledWorkout) {
@@ -207,38 +217,38 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('returns rest day indication when applicable', async () => {
-        const result = await athleteTools.getTodaysWorkout.execute({});
+        const result = await exec(athleteTools.getTodaysWorkout, {});
         if (result.data.isRestDay !== undefined) {
           expect(typeof result.data.isRestDay).toBe('boolean');
         }
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getTodaysWorkout.execute({});
+        const result = await exec(freeTools.getTodaysWorkout, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 7: getRecentWorkouts', () => {
       it('happy path: returns workout list with default limit', async () => {
-        const result = await athleteTools.getRecentWorkouts.execute({});
+        const result = await exec(athleteTools.getRecentWorkouts, {});
         expect(result.success).toBe(true);
         expect(Array.isArray(result.data.workouts)).toBe(true);
       });
 
       it('parameter variation: custom limit of 5', async () => {
-        const result = await athleteTools.getRecentWorkouts.execute({ limit: 5 });
+        const result = await exec(athleteTools.getRecentWorkouts, { limit: 5 });
         expect(result.success).toBe(true);
         expect(result.data.workouts.length).toBeLessThanOrEqual(5);
       });
 
       it('parameter variation: maximum limit of 30', async () => {
-        const result = await athleteTools.getRecentWorkouts.execute({ limit: 30 });
+        const result = await exec(athleteTools.getRecentWorkouts, { limit: 30 });
         expect(result.success).toBe(true);
       });
 
       it('edge case: returns workouts array', async () => {
-        const result = await athleteTools.getRecentWorkouts.execute({ limit: 10 });
+        const result = await exec(athleteTools.getRecentWorkouts, { limit: 10 });
         expect(result.success).toBe(true);
         expect(Array.isArray(result.data.workouts)).toBe(true);
       });
@@ -246,22 +256,22 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 8: getExerciseHistory', () => {
       it('happy path: returns history for known exercise', async () => {
-        const result = await athleteTools.getExerciseHistory.execute({ exerciseName: 'bench press' });
+        const result = await exec(athleteTools.getExerciseHistory, { exerciseName: 'bench press' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: with custom limit', async () => {
-        const result = await athleteTools.getExerciseHistory.execute({ exerciseName: 'squat', limit: 10 });
+        const result = await exec(athleteTools.getExerciseHistory, { exerciseName: 'squat', limit: 10 });
         expect(result).toBeDefined();
       });
 
       it('edge case: non-existent exercise returns empty', async () => {
-        const result = await athleteTools.getExerciseHistory.execute({ exerciseName: 'fake_exercise_xyz' });
+        const result = await exec(athleteTools.getExerciseHistory, { exerciseName: 'fake_exercise_xyz' });
         expect(result).toBeDefined();
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getExerciseHistory.execute({ exerciseName: 'deadlift' });
+        const result = await exec(freeTools.getExerciseHistory, { exerciseName: 'deadlift' });
         expect(result).toBeDefined();
       });
     });
@@ -269,7 +279,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 9: getPersonalRecords', () => {
       it('happy path: returns all PRs', async () => {
         try {
-          const result = await athleteTools.getPersonalRecords.execute({});
+          const result = await exec(athleteTools.getPersonalRecords, {});
           expect(result.success).toBe(true);
           expect(Array.isArray(result.data.records)).toBe(true);
         } catch (e) {
@@ -279,7 +289,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: filter by exercise', async () => {
         try {
-          const result = await athleteTools.getPersonalRecords.execute({ exerciseName: 'bench press' });
+          const result = await exec(athleteTools.getPersonalRecords, { exerciseName: 'bench press' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -288,7 +298,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: filter by PR type', async () => {
         try {
-          const result = await athleteTools.getPersonalRecords.execute({ prType: '1rm' });
+          const result = await exec(athleteTools.getPersonalRecords, { prType: '1rm' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -297,7 +307,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('edge case: new user has no PRs', async () => {
         try {
-          const result = await athleteTools.getPersonalRecords.execute({});
+          const result = await exec(athleteTools.getPersonalRecords, {});
           if (result.success) {
             expect(result.data.totalPRs).toBe(0);
           }
@@ -309,49 +319,49 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 11: getActiveWorkout', () => {
       it('happy path: returns active workout status', async () => {
-        const result = await athleteTools.getActiveWorkout.execute({});
+        const result = await exec(athleteTools.getActiveWorkout, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.hasActiveWorkout).toBe('boolean');
       });
 
       it('edge case: returns hasActiveWorkout boolean', async () => {
-        const result = await athleteTools.getActiveWorkout.execute({});
+        const result = await exec(athleteTools.getActiveWorkout, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.hasActiveWorkout).toBe('boolean');
       });
 
       it('returns workout details when active', async () => {
-        const result = await athleteTools.getActiveWorkout.execute({});
+        const result = await exec(athleteTools.getActiveWorkout, {});
         if (result.data.hasActiveWorkout) {
           expect(result.data.workout).toBeDefined();
         }
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getActiveWorkout.execute({});
+        const result = await exec(freeTools.getActiveWorkout, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 12: searchExercises', () => {
       it('happy path: search by name', async () => {
-        const result = await athleteTools.searchExercises.execute({ query: 'bench' });
+        const result = await exec(athleteTools.searchExercises, { query: 'bench' });
         expect(result.success).toBe(true);
         expect(Array.isArray(result.data.exercises)).toBe(true);
       });
 
       it('parameter variation: search with muscle group filter', async () => {
-        const result = await athleteTools.searchExercises.execute({ query: 'press', muscleGroup: 'chest' });
+        const result = await exec(athleteTools.searchExercises, { query: 'press', muscleGroup: 'chest' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: search with equipment filter', async () => {
-        const result = await athleteTools.searchExercises.execute({ query: 'curl', equipment: ['dumbbell'] });
+        const result = await exec(athleteTools.searchExercises, { query: 'curl', equipment: ['dumbbell'] });
         expect(result).toBeDefined();
       });
 
       it('edge case: search with no results', async () => {
-        const result = await athleteTools.searchExercises.execute({ query: 'zzzznonexistent' });
+        const result = await exec(athleteTools.searchExercises, { query: 'zzzznonexistent' });
         expect(result.success).toBe(true);
         expect(result.data.exercises.length).toBe(0);
       });
@@ -359,12 +369,12 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 13: getExerciseSubstitutes (Premium)', () => {
       it('happy path: returns substitutes for exercise', async () => {
-        const result = await athleteTools.getExerciseSubstitutes.execute({ exerciseName: 'barbell squat' });
+        const result = await exec(athleteTools.getExerciseSubstitutes, { exerciseName: 'barbell squat' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: with injury reason', async () => {
-        const result = await athleteTools.getExerciseSubstitutes.execute({ 
+        const result = await exec(athleteTools.getExerciseSubstitutes, { 
           exerciseName: 'bench press', 
           reason: 'injury' 
         });
@@ -372,7 +382,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('parameter variation: with equipment reason', async () => {
-        const result = await athleteTools.getExerciseSubstitutes.execute({ 
+        const result = await exec(athleteTools.getExerciseSubstitutes, { 
           exerciseName: 'leg press', 
           reason: 'equipment' 
         });
@@ -381,7 +391,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('free tier denied access', async () => {
         try {
-          const result = await freeTools.getExerciseSubstitutes.execute({ exerciseName: 'squat' });
+          const result = await exec(freeTools.getExerciseSubstitutes, { exerciseName: 'squat' });
           // Tool may not exist for free tier or may return permission denied
           if (result.success === false) {
             expect(result.error?.code).toBe('PERMISSION_DENIED');
@@ -399,95 +409,95 @@ describe('Comprehensive Tool E2E Tests', () => {
   describe('Category 3: Program Tools', () => {
     describe('Tool 14: getActiveProgram', () => {
       it('happy path: returns program status', async () => {
-        const result = await athleteTools.getActiveProgram.execute({});
+        const result = await exec(athleteTools.getActiveProgram, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.hasActiveProgram).toBe('boolean');
       });
 
       it('edge case: returns hasActiveProgram boolean', async () => {
-        const result = await athleteTools.getActiveProgram.execute({});
+        const result = await exec(athleteTools.getActiveProgram, {});
         expect(result.success).toBe(true);
         expect(typeof result.data.hasActiveProgram).toBe('boolean');
       });
 
       it('returns program details when active', async () => {
-        const result = await athleteTools.getActiveProgram.execute({});
+        const result = await exec(athleteTools.getActiveProgram, {});
         if (result.data.hasActiveProgram) {
           expect(result.data.program).toBeDefined();
         }
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getActiveProgram.execute({});
+        const result = await exec(freeTools.getActiveProgram, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 15: getProgramProgress', () => {
       it('happy path: returns progress data', async () => {
-        const result = await athleteTools.getProgramProgress.execute({});
+        const result = await exec(athleteTools.getProgramProgress, {});
         expect(result).toBeDefined();
       });
 
       it('edge case: no program returns appropriate message', async () => {
-        const result = await athleteTools.getProgramProgress.execute({});
+        const result = await exec(athleteTools.getProgramProgress, {});
         expect(result).toBeDefined();
       });
 
       it('returns numeric adherence rate when available', async () => {
-        const result = await athleteTools.getProgramProgress.execute({});
+        const result = await exec(athleteTools.getProgramProgress, {});
         if (result.success && result.data.adherenceRate !== undefined) {
           expect(typeof result.data.adherenceRate).toBe('number');
         }
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getProgramProgress.execute({});
+        const result = await exec(freeTools.getProgramProgress, {});
         expect(result).toBeDefined();
       });
     });
 
     describe('Tool 16: getUpcomingWorkouts', () => {
       it('happy path: returns upcoming schedule', async () => {
-        const result = await athleteTools.getUpcomingWorkouts.execute({});
+        const result = await exec(athleteTools.getUpcomingWorkouts, {});
         expect(result.success).toBe(true);
         expect(Array.isArray(result.data.upcomingWorkouts)).toBe(true);
       });
 
       it('parameter variation: 7 days lookahead', async () => {
-        const result = await athleteTools.getUpcomingWorkouts.execute({ days: 7 });
+        const result = await exec(athleteTools.getUpcomingWorkouts, { days: 7 });
         expect(result.success).toBe(true);
       });
 
       it('parameter variation: 14 days lookahead', async () => {
-        const result = await athleteTools.getUpcomingWorkouts.execute({ days: 14 });
+        const result = await exec(athleteTools.getUpcomingWorkouts, { days: 14 });
         expect(result.success).toBe(true);
       });
 
       it('edge case: no program returns empty list', async () => {
-        const result = await athleteTools.getUpcomingWorkouts.execute({ days: 7 });
+        const result = await exec(athleteTools.getUpcomingWorkouts, { days: 7 });
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 17: getProgramWeek', () => {
       it('happy path: returns current week by default', async () => {
-        const result = await athleteTools.getProgramWeek.execute({});
+        const result = await exec(athleteTools.getProgramWeek, {});
         expect(result).toBeDefined();
       });
 
       it('parameter variation: specific week number', async () => {
-        const result = await athleteTools.getProgramWeek.execute({ weekNumber: 1 });
+        const result = await exec(athleteTools.getProgramWeek, { weekNumber: 1 });
         expect(result).toBeDefined();
       });
 
       it('edge case: no active program', async () => {
-        const result = await athleteTools.getProgramWeek.execute({});
+        const result = await exec(athleteTools.getProgramWeek, {});
         expect(result).toBeDefined();
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getProgramWeek.execute({});
+        const result = await exec(freeTools.getProgramWeek, {});
         expect(result).toBeDefined();
       });
     });
@@ -500,7 +510,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 18: getReadinessScore (Premium)', () => {
       it('happy path: returns readiness data', async () => {
         try {
-          const result = await athleteTools.getReadinessScore.execute({});
+          const result = await exec(athleteTools.getReadinessScore, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known date handling issue
@@ -509,7 +519,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns hasReadinessData boolean', async () => {
         try {
-          const result = await athleteTools.getReadinessScore.execute({});
+          const result = await exec(athleteTools.getReadinessScore, {});
           if (result.success) {
             expect(typeof result.data.hasReadinessData).toBe('boolean');
           }
@@ -520,7 +530,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns readiness score when available', async () => {
         try {
-          const result = await athleteTools.getReadinessScore.execute({});
+          const result = await exec(athleteTools.getReadinessScore, {});
           if (result.success && result.data.hasReadinessData) {
             expect(result.data.readiness.score).toBeGreaterThanOrEqual(0);
           }
@@ -531,7 +541,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('free tier denied access', async () => {
         try {
-          const result = await freeTools.getReadinessScore.execute({});
+          const result = await exec(freeTools.getReadinessScore, {});
           expect(result.success).toBe(false);
           expect(result.error?.code).toBe('PERMISSION_DENIED');
         } catch (e) {
@@ -542,52 +552,52 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 21: getDailySummary', () => {
       it('happy path: returns daily summary', async () => {
-        const result = await athleteTools.getDailySummary.execute({});
+        const result = await exec(athleteTools.getDailySummary, {});
         expect(result.success).toBe(true);
         expect(result.data).toHaveProperty('date');
       });
 
       it('returns workout section', async () => {
-        const result = await athleteTools.getDailySummary.execute({});
+        const result = await exec(athleteTools.getDailySummary, {});
         // workout may be null/undefined for users without workouts
         expect(result.data.workout === undefined || result.data.workout === null || typeof result.data.workout === 'object').toBe(true);
       });
 
       it('returns activity section', async () => {
-        const result = await athleteTools.getDailySummary.execute({});
+        const result = await exec(athleteTools.getDailySummary, {});
         if (result.data.activity) {
           expect(typeof result.data.activity.steps).toBe('number');
         }
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getDailySummary.execute({});
+        const result = await exec(freeTools.getDailySummary, {});
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 22: getFatigueScore (Premium)', () => {
       it('happy path: returns fatigue assessment', async () => {
-        const result = await athleteTools.getFatigueScore.execute({});
+        const result = await exec(athleteTools.getFatigueScore, {});
         expect(result).toBeDefined();
       });
 
       it('returns fatigue level enum', async () => {
-        const result = await athleteTools.getFatigueScore.execute({});
+        const result = await exec(athleteTools.getFatigueScore, {});
         if (result.success && result.data.level) {
           expect(['fresh', 'manageable', 'accumulated', 'overreached']).toContain(result.data.level);
         }
       });
 
       it('returns suggestedDeload boolean', async () => {
-        const result = await athleteTools.getFatigueScore.execute({});
+        const result = await exec(athleteTools.getFatigueScore, {});
         if (result.success && result.data.suggestedDeload !== undefined) {
           expect(typeof result.data.suggestedDeload).toBe('boolean');
         }
       });
 
       it('free tier denied access', async () => {
-        const result = await freeTools.getFatigueScore.execute({});
+        const result = await exec(freeTools.getFatigueScore, {});
         if (result.error) {
           expect(result.error.code).toBe('PERMISSION_DENIED');
         }
@@ -602,7 +612,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 24: getRecentRuns', () => {
       it('happy path: returns run list', async () => {
         try {
-          const result = await athleteTools.getRecentRuns.execute({});
+          const result = await exec(athleteTools.getRecentRuns, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known implementation issues
@@ -611,7 +621,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: limit of 5', async () => {
         try {
-          const result = await athleteTools.getRecentRuns.execute({ limit: 5 });
+          const result = await exec(athleteTools.getRecentRuns, { limit: 5 });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -620,7 +630,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('edge case: new user has no runs', async () => {
         try {
-          const result = await athleteTools.getRecentRuns.execute({ limit: 10 });
+          const result = await exec(athleteTools.getRecentRuns, { limit: 10 });
           if (result.success) {
             expect(result.data.runs.length).toBe(0);
           }
@@ -631,7 +641,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('accessible by free tier', async () => {
         try {
-          const result = await freeTools.getRecentRuns.execute({});
+          const result = await exec(freeTools.getRecentRuns, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -642,7 +652,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 25: getRunningPRs', () => {
       it('happy path: returns all running PRs', async () => {
         try {
-          const result = await athleteTools.getRunningPRs.execute({});
+          const result = await exec(athleteTools.getRunningPRs, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known UNDEFINED_VALUE issue
@@ -651,7 +661,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: filter by 5k', async () => {
         try {
-          const result = await athleteTools.getRunningPRs.execute({ distance: '5k' });
+          const result = await exec(athleteTools.getRunningPRs, { distance: '5k' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -660,7 +670,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: filter by marathon', async () => {
         try {
-          const result = await athleteTools.getRunningPRs.execute({ distance: 'marathon' });
+          const result = await exec(athleteTools.getRunningPRs, { distance: 'marathon' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -669,7 +679,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('edge case: new user has no PRs', async () => {
         try {
-          const result = await athleteTools.getRunningPRs.execute({ distance: 'all' });
+          const result = await exec(athleteTools.getRunningPRs, { distance: 'all' });
           if (result.success) {
             expect(result.data.records.length).toBe(0);
           }
@@ -682,7 +692,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 26: getRunningStats', () => {
       it('happy path: returns running statistics', async () => {
         try {
-          const result = await athleteTools.getRunningStats.execute({});
+          const result = await exec(athleteTools.getRunningStats, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known date handling issues
@@ -691,7 +701,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: month period', async () => {
         try {
-          const result = await athleteTools.getRunningStats.execute({ period: 'month' });
+          const result = await exec(athleteTools.getRunningStats, { period: 'month' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -700,7 +710,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: year period', async () => {
         try {
-          const result = await athleteTools.getRunningStats.execute({ period: 'year' });
+          const result = await exec(athleteTools.getRunningStats, { period: 'year' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -709,7 +719,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('accessible by free tier', async () => {
         try {
-          const result = await freeTools.getRunningStats.execute({ period: 'week' });
+          const result = await exec(freeTools.getRunningStats, { period: 'week' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -719,19 +729,19 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 27: getShoeMileage', () => {
       it('happy path: returns shoe tracking', async () => {
-        const result = await athleteTools.getShoeMileage.execute({});
+        const result = await exec(athleteTools.getShoeMileage, {});
         expect(result).toBeDefined();
       });
 
       it('edge case: new user has no shoes', async () => {
-        const result = await athleteTools.getShoeMileage.execute({});
+        const result = await exec(athleteTools.getShoeMileage, {});
         if (result.success && result.data.shoes) {
           expect(Array.isArray(result.data.shoes)).toBe(true);
         }
       });
 
       it('returns activeShoe field', async () => {
-        const result = await athleteTools.getShoeMileage.execute({});
+        const result = await exec(athleteTools.getShoeMileage, {});
         if (result.success) {
           // activeShoe may not be present if user has no shoes
           expect(result.data.activeShoe === undefined || result.data.activeShoe === null || typeof result.data.activeShoe === 'object').toBe(true);
@@ -739,7 +749,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getShoeMileage.execute({});
+        const result = await exec(freeTools.getShoeMileage, {});
         expect(result).toBeDefined();
       });
     });
@@ -751,22 +761,22 @@ describe('Comprehensive Tool E2E Tests', () => {
   describe('Category 6: Injury Tools', () => {
     describe('Tool 28: getInjuryHistory', () => {
       it('happy path: returns injury history', async () => {
-        const result = await athleteTools.getInjuryHistory.execute({});
+        const result = await exec(athleteTools.getInjuryHistory, {});
         expect(result).toBeDefined();
       });
 
       it('parameter variation: include resolved injuries', async () => {
-        const result = await athleteTools.getInjuryHistory.execute({ includeResolved: true });
+        const result = await exec(athleteTools.getInjuryHistory, { includeResolved: true });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: exclude resolved injuries', async () => {
-        const result = await athleteTools.getInjuryHistory.execute({ includeResolved: false });
+        const result = await exec(athleteTools.getInjuryHistory, { includeResolved: false });
         expect(result).toBeDefined();
       });
 
       it('edge case: new user has no injury history', async () => {
-        const result = await athleteTools.getInjuryHistory.execute({ includeResolved: true });
+        const result = await exec(athleteTools.getInjuryHistory, { includeResolved: true });
         if (result.success && result.data.injuries) {
           expect(result.data.injuries.length).toBe(0);
         }
@@ -775,26 +785,26 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 29: getInjuryRiskAssessment (Premium)', () => {
       it('happy path: returns risk assessment', async () => {
-        const result = await athleteTools.getInjuryRiskAssessment.execute({});
+        const result = await exec(athleteTools.getInjuryRiskAssessment, {});
         expect(result).toBeDefined();
       });
 
       it('returns overallRisk enum value', async () => {
-        const result = await athleteTools.getInjuryRiskAssessment.execute({});
+        const result = await exec(athleteTools.getInjuryRiskAssessment, {});
         if (result.success && result.data.overallRisk) {
           expect(['low', 'moderate', 'high']).toContain(result.data.overallRisk);
         }
       });
 
       it('returns recommendations array', async () => {
-        const result = await athleteTools.getInjuryRiskAssessment.execute({});
+        const result = await exec(athleteTools.getInjuryRiskAssessment, {});
         if (result.success && result.data.recommendations) {
           expect(Array.isArray(result.data.recommendations)).toBe(true);
         }
       });
 
       it('free tier denied access', async () => {
-        const result = await freeTools.getInjuryRiskAssessment.execute({});
+        const result = await exec(freeTools.getInjuryRiskAssessment, {});
         if (result.error) {
           expect(result.error.code).toBe('PERMISSION_DENIED');
         }
@@ -803,26 +813,26 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 30: getExercisesToAvoid', () => {
       it('happy path: returns exercises to avoid', async () => {
-        const result = await athleteTools.getExercisesToAvoid.execute({});
+        const result = await exec(athleteTools.getExercisesToAvoid, {});
         expect(result).toBeDefined();
       });
 
       it('returns avoidExercises as array', async () => {
-        const result = await athleteTools.getExercisesToAvoid.execute({});
+        const result = await exec(athleteTools.getExercisesToAvoid, {});
         if (result.success && result.data.avoidExercises) {
           expect(Array.isArray(result.data.avoidExercises)).toBe(true);
         }
       });
 
       it('returns modifiedExercises when applicable', async () => {
-        const result = await athleteTools.getExercisesToAvoid.execute({});
+        const result = await exec(athleteTools.getExercisesToAvoid, {});
         if (result.success && result.data.modifiedExercises) {
           expect(Array.isArray(result.data.modifiedExercises)).toBe(true);
         }
       });
 
       it('accessible by free tier', async () => {
-        const result = await freeTools.getExercisesToAvoid.execute({});
+        const result = await exec(freeTools.getExercisesToAvoid, {});
         expect(result).toBeDefined();
       });
     });
@@ -835,7 +845,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 31: searchKnowledgeBase', () => {
       it('happy path: search for training info', async () => {
         try {
-          const result = await athleteTools.searchKnowledgeBase.execute({ query: 'progressive overload' });
+          const result = await exec(athleteTools.searchKnowledgeBase, { query: 'progressive overload' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // SEARCH_INDEXES issue
@@ -844,7 +854,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: filter by training category', async () => {
         try {
-          const result = await athleteTools.searchKnowledgeBase.execute({
+          const result = await exec(athleteTools.searchKnowledgeBase, {
             query: 'how to build muscle',
             category: 'training'
           });
@@ -856,7 +866,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: filter by nutrition category', async () => {
         try {
-          const result = await athleteTools.searchKnowledgeBase.execute({
+          const result = await exec(athleteTools.searchKnowledgeBase, {
             query: 'protein intake',
             category: 'nutrition'
           });
@@ -868,7 +878,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('accessible by free tier', async () => {
         try {
-          const result = await freeTools.searchKnowledgeBase.execute({ query: 'form tips' });
+          const result = await exec(freeTools.searchKnowledgeBase, { query: 'form tips' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -879,7 +889,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 32: getExerciseFormTips', () => {
       it('happy path: returns form guidance', async () => {
         try {
-          const result = await athleteTools.getExerciseFormTips.execute({ exerciseName: 'squat' });
+          const result = await exec(athleteTools.getExerciseFormTips, { exerciseName: 'squat' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // SEARCH_INDEXES issue
@@ -888,7 +898,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns formCues when available', async () => {
         try {
-          const result = await athleteTools.getExerciseFormTips.execute({ exerciseName: 'deadlift' });
+          const result = await exec(athleteTools.getExerciseFormTips, { exerciseName: 'deadlift' });
           if (result.success && result.data.formCues) {
             expect(Array.isArray(result.data.formCues)).toBe(true);
           }
@@ -899,7 +909,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns commonMistakes when available', async () => {
         try {
-          const result = await athleteTools.getExerciseFormTips.execute({ exerciseName: 'bench press' });
+          const result = await exec(athleteTools.getExerciseFormTips, { exerciseName: 'bench press' });
           if (result.success && result.data.commonMistakes) {
             expect(Array.isArray(result.data.commonMistakes)).toBe(true);
           }
@@ -910,7 +920,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('accessible by free tier', async () => {
         try {
-          const result = await freeTools.getExerciseFormTips.execute({ exerciseName: 'row' });
+          const result = await exec(freeTools.getExerciseFormTips, { exerciseName: 'row' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -921,7 +931,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 33: getTrainingPrinciples', () => {
       it('happy path: returns training principles', async () => {
         try {
-          const result = await athleteTools.getTrainingPrinciples.execute({ topic: 'progressive overload' });
+          const result = await exec(athleteTools.getTrainingPrinciples, { topic: 'progressive overload' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // SEARCH_INDEXES issue
@@ -930,7 +940,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns explanation when available', async () => {
         try {
-          const result = await athleteTools.getTrainingPrinciples.execute({ topic: 'periodization' });
+          const result = await exec(athleteTools.getTrainingPrinciples, { topic: 'periodization' });
           if (result.success && result.data.explanation) {
             expect(typeof result.data.explanation).toBe('string');
           }
@@ -941,7 +951,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns relatedConcepts when available', async () => {
         try {
-          const result = await athleteTools.getTrainingPrinciples.execute({ topic: 'deload' });
+          const result = await exec(athleteTools.getTrainingPrinciples, { topic: 'deload' });
           if (result.success && result.data.relatedConcepts) {
             expect(Array.isArray(result.data.relatedConcepts)).toBe(true);
           }
@@ -952,7 +962,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('accessible by free tier', async () => {
         try {
-          const result = await freeTools.getTrainingPrinciples.execute({ topic: 'recovery' });
+          const result = await exec(freeTools.getTrainingPrinciples, { topic: 'recovery' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -968,7 +978,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 34: getVolumeAnalytics', () => {
       it('happy path: returns volume data', async () => {
         try {
-          const result = await athleteTools.getVolumeAnalytics.execute({});
+          const result = await exec(athleteTools.getVolumeAnalytics, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known date handling issues
@@ -977,7 +987,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: week period', async () => {
         try {
-          const result = await athleteTools.getVolumeAnalytics.execute({ period: 'week' });
+          const result = await exec(athleteTools.getVolumeAnalytics, { period: 'week' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -986,7 +996,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: month period', async () => {
         try {
-          const result = await athleteTools.getVolumeAnalytics.execute({ period: 'month' });
+          const result = await exec(athleteTools.getVolumeAnalytics, { period: 'month' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -995,7 +1005,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('free tier denied access', async () => {
         try {
-          const result = await freeTools.getVolumeAnalytics.execute({ period: 'week' });
+          const result = await exec(freeTools.getVolumeAnalytics, { period: 'week' });
           expect(result.success).toBe(false);
           expect(result.error?.code).toBe('PERMISSION_DENIED');
         } catch (e) {
@@ -1006,22 +1016,22 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 35: getProgressTrends', () => {
       it('happy path: returns trend data', async () => {
-        const result = await athleteTools.getProgressTrends.execute({});
+        const result = await exec(athleteTools.getProgressTrends, {});
         expect(result).toBeDefined();
       });
 
       it('parameter variation: 3 month period', async () => {
-        const result = await athleteTools.getProgressTrends.execute({ period: '3m' });
+        const result = await exec(athleteTools.getProgressTrends, { period: '3m' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: 1 year period', async () => {
-        const result = await athleteTools.getProgressTrends.execute({ period: '1y' });
+        const result = await exec(athleteTools.getProgressTrends, { period: '1y' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: filter by exercises', async () => {
-        const result = await athleteTools.getProgressTrends.execute({
+        const result = await exec(athleteTools.getProgressTrends, {
           exerciseNames: ['bench press', 'squat'],
           period: '3m'
         });
@@ -1036,7 +1046,7 @@ describe('Comprehensive Tool E2E Tests', () => {
   describe('Category 9: Coach Client Management', () => {
     describe('Tool 36: getClientList', () => {
       it('happy path: returns client list', async () => {
-        const result = await coachTools.getClientList.execute({});
+        const result = await exec(coachTools.getClientList, {});
         expect(result).toBeDefined();
         if (result.success) {
           expect(Array.isArray(result.data.clients)).toBe(true);
@@ -1044,31 +1054,31 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('parameter variation: filter active clients', async () => {
-        const result = await coachTools.getClientList.execute({ status: 'active' });
+        const result = await exec(coachTools.getClientList, { status: 'active' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: with limit', async () => {
-        const result = await coachTools.getClientList.execute({ status: 'active', limit: 5 });
+        const result = await exec(coachTools.getClientList, { status: 'active', limit: 5 });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: all clients', async () => {
-        const result = await coachTools.getClientList.execute({ status: 'all' });
+        const result = await exec(coachTools.getClientList, { status: 'all' });
         expect(result).toBeDefined();
       });
     });
 
     describe('Tool 37: getClientProfile', () => {
       it('happy path: returns client profile with valid UUID', async () => {
-        const result = await coachTools.getClientProfile.execute({
+        const result = await exec(coachTools.getClientProfile, {
           clientId: '00000000-0000-0000-0000-000000000000'
         });
         expect(result).toBeDefined();
       });
 
       it('error case: returns error for non-existent client', async () => {
-        const result = await coachTools.getClientProfile.execute({
+        const result = await exec(coachTools.getClientProfile, {
           clientId: '11111111-1111-1111-1111-111111111111'
         });
         expect(result).toBeDefined();
@@ -1076,7 +1086,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('returns profile with expected structure', async () => {
-        const result = await coachTools.getClientProfile.execute({
+        const result = await exec(coachTools.getClientProfile, {
           clientId: testUserId
         });
         if (result.success && result.data.profile) {
@@ -1086,7 +1096,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('premium user cannot access', async () => {
         const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
-        const result = await premiumCoachTools.getClientProfile.execute({
+        const result = await exec(premiumCoachTools.getClientProfile, {
           clientId: testUserId
         });
         expect(result.success).toBe(false);
@@ -1096,14 +1106,14 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 38: getClientWorkouts', () => {
       it('happy path: returns client workouts', async () => {
-        const result = await coachTools.getClientWorkouts.execute({
+        const result = await exec(coachTools.getClientWorkouts, {
           clientId: testUserId
         });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: custom limit', async () => {
-        const result = await coachTools.getClientWorkouts.execute({
+        const result = await exec(coachTools.getClientWorkouts, {
           clientId: testUserId,
           limit: 5
         });
@@ -1111,7 +1121,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('edge case: client with no workouts', async () => {
-        const result = await coachTools.getClientWorkouts.execute({
+        const result = await exec(coachTools.getClientWorkouts, {
           clientId: testUserId,
           limit: 10
         });
@@ -1122,7 +1132,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('premium user cannot access', async () => {
         const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
-        const result = await premiumCoachTools.getClientWorkouts.execute({
+        const result = await exec(premiumCoachTools.getClientWorkouts, {
           clientId: testUserId
         });
         expect(result.success).toBe(false);
@@ -1132,7 +1142,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 39: getClientProgress', () => {
       it('happy path: returns progress data', async () => {
         try {
-          const result = await coachTools.getClientProgress.execute({
+          const result = await exec(coachTools.getClientProgress, {
             clientId: testUserId
           });
           expect(result).toBeDefined();
@@ -1143,7 +1153,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: 1 month period', async () => {
         try {
-          const result = await coachTools.getClientProgress.execute({
+          const result = await exec(coachTools.getClientProgress, {
             clientId: testUserId,
             period: '1m'
           });
@@ -1155,7 +1165,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: 6 month period', async () => {
         try {
-          const result = await coachTools.getClientProgress.execute({
+          const result = await exec(coachTools.getClientProgress, {
             clientId: testUserId,
             period: '6m'
           });
@@ -1167,7 +1177,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns expected progress fields', async () => {
         try {
-          const result = await coachTools.getClientProgress.execute({
+          const result = await exec(coachTools.getClientProgress, {
             clientId: testUserId,
             period: '3m'
           });
@@ -1188,7 +1198,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 44: getProgramTemplates', () => {
       it('happy path: returns templates', async () => {
         try {
-          const result = await coachTools.getProgramTemplates.execute({});
+          const result = await exec(coachTools.getProgramTemplates, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known UNDEFINED_VALUE issue
@@ -1197,7 +1207,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: filter by goal', async () => {
         try {
-          const result = await coachTools.getProgramTemplates.execute({ goal: 'strength' });
+          const result = await exec(coachTools.getProgramTemplates, { goal: 'strength' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -1206,7 +1216,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('edge case: no templates for goal', async () => {
         try {
-          const result = await coachTools.getProgramTemplates.execute({ goal: 'nonexistent' });
+          const result = await exec(coachTools.getProgramTemplates, { goal: 'nonexistent' });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -1216,7 +1226,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       it('premium user cannot access', async () => {
         const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
         try {
-          const result = await premiumCoachTools.getProgramTemplates.execute({});
+          const result = await exec(premiumCoachTools.getProgramTemplates, {});
           expect(result.success).toBe(false);
         } catch (e) {
           expect(e).toBeDefined();
@@ -1226,22 +1236,22 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 46: getProgramAdherence', () => {
       it('happy path: returns adherence stats', async () => {
-        const result = await coachTools.getProgramAdherence.execute({});
+        const result = await exec(coachTools.getProgramAdherence, {});
         expect(result).toBeDefined();
       });
 
       it('parameter variation: week period', async () => {
-        const result = await coachTools.getProgramAdherence.execute({ period: 'week' });
+        const result = await exec(coachTools.getProgramAdherence, { period: 'week' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: month period', async () => {
-        const result = await coachTools.getProgramAdherence.execute({ period: 'month' });
+        const result = await exec(coachTools.getProgramAdherence, { period: 'month' });
         expect(result).toBeDefined();
       });
 
       it('parameter variation: specific client', async () => {
-        const result = await coachTools.getProgramAdherence.execute({
+        const result = await exec(coachTools.getProgramAdherence, {
           clientId: testUserId,
           period: 'week'
         });
@@ -1257,7 +1267,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 49: getClientConversations', () => {
       it('happy path: returns conversations', async () => {
         try {
-          const result = await coachTools.getClientConversations.execute({});
+          const result = await exec(coachTools.getClientConversations, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known SQL issue
@@ -1266,7 +1276,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: unread only', async () => {
         try {
-          const result = await coachTools.getClientConversations.execute({ unreadOnly: true });
+          const result = await exec(coachTools.getClientConversations, { unreadOnly: true });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -1275,7 +1285,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('parameter variation: all conversations', async () => {
         try {
-          const result = await coachTools.getClientConversations.execute({ unreadOnly: false });
+          const result = await exec(coachTools.getClientConversations, { unreadOnly: false });
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined();
@@ -1285,7 +1295,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       it('premium user cannot access', async () => {
         const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
         try {
-          const result = await premiumCoachTools.getClientConversations.execute({});
+          const result = await exec(premiumCoachTools.getClientConversations, {});
           expect(result.success).toBe(false);
         } catch (e) {
           expect(e).toBeDefined();
@@ -1298,7 +1308,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       const testConversationId = '00000000-0000-0000-0000-000000000099';
 
       it('happy path: returns messages or not found', async () => {
-        const result = await coachTools.getConversationMessages.execute({
+        const result = await exec(coachTools.getConversationMessages, {
           conversationId: testConversationId
         });
         // Either succeeds with messages or returns "not found" error
@@ -1309,7 +1319,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('parameter variation: custom limit', async () => {
-        const result = await coachTools.getConversationMessages.execute({
+        const result = await exec(coachTools.getConversationMessages, {
           conversationId: testConversationId,
           limit: 20
         });
@@ -1317,7 +1327,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('edge case: non-existent conversation', async () => {
-        const result = await coachTools.getConversationMessages.execute({
+        const result = await exec(coachTools.getConversationMessages, {
           conversationId: '99999999-9999-9999-9999-999999999999',
           limit: 50
         });
@@ -1327,7 +1337,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('returns messages array when successful', async () => {
-        const result = await coachTools.getConversationMessages.execute({
+        const result = await exec(coachTools.getConversationMessages, {
           conversationId: testConversationId,
           limit: 10
         });
@@ -1346,7 +1356,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 52: getClientAnalyticsSummary', () => {
       // Note: This tool requires clientId (UUID) and optionally 'days' (number 7-90)
       it('happy path: returns analytics summary for client', async () => {
-        const result = await coachTools.getClientAnalyticsSummary.execute({
+        const result = await exec(coachTools.getClientAnalyticsSummary, {
           clientId: testUserId
         });
         expect(result).toBeDefined();
@@ -1357,7 +1367,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('parameter variation: 7 days', async () => {
-        const result = await coachTools.getClientAnalyticsSummary.execute({
+        const result = await exec(coachTools.getClientAnalyticsSummary, {
           clientId: testUserId,
           days: 7
         });
@@ -1368,7 +1378,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('parameter variation: 90 days', async () => {
-        const result = await coachTools.getClientAnalyticsSummary.execute({
+        const result = await exec(coachTools.getClientAnalyticsSummary, {
           clientId: testUserId,
           days: 90
         });
@@ -1379,7 +1389,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       }, 30000);
 
       it('returns expected analytics fields', async () => {
-        const result = await coachTools.getClientAnalyticsSummary.execute({
+        const result = await exec(coachTools.getClientAnalyticsSummary, {
           clientId: testUserId,
           days: 30
         });
@@ -1395,7 +1405,7 @@ describe('Comprehensive Tool E2E Tests', () => {
     describe('Tool 53: getAtRiskClients', () => {
       it('happy path: returns at-risk clients', async () => {
         try {
-          const result = await coachTools.getAtRiskClients.execute({});
+          const result = await exec(coachTools.getAtRiskClients, {});
           expect(result).toBeDefined();
         } catch (e) {
           expect(e).toBeDefined(); // Known UNDEFINED_VALUE issue
@@ -1404,7 +1414,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns atRiskClients array when successful', async () => {
         try {
-          const result = await coachTools.getAtRiskClients.execute({});
+          const result = await exec(coachTools.getAtRiskClients, {});
           if (result.success && result.data.atRiskClients) {
             expect(Array.isArray(result.data.atRiskClients)).toBe(true);
           }
@@ -1415,7 +1425,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('returns totalAtRisk count', async () => {
         try {
-          const result = await coachTools.getAtRiskClients.execute({});
+          const result = await exec(coachTools.getAtRiskClients, {});
           if (result.success && result.data.totalAtRisk !== undefined) {
             expect(typeof result.data.totalAtRisk).toBe('number');
           }
@@ -1427,7 +1437,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       it('premium user cannot access', async () => {
         const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
         try {
-          const result = await premiumCoachTools.getAtRiskClients.execute({});
+          const result = await exec(premiumCoachTools.getAtRiskClients, {});
           expect(result.success).toBe(false);
         } catch (e) {
           expect(e).toBeDefined();
@@ -1442,20 +1452,20 @@ describe('Comprehensive Tool E2E Tests', () => {
   describe('Category 13: Coach Profile', () => {
     describe('Tool 54: getCoachProfile', () => {
       it('happy path: returns coach profile', async () => {
-        const result = await coachTools.getCoachProfile.execute({});
+        const result = await exec(coachTools.getCoachProfile, {});
         expect(result.success).toBe(true);
         expect(result.data.profile).toHaveProperty('name');
       });
 
       it('returns settings object', async () => {
-        const result = await coachTools.getCoachProfile.execute({});
+        const result = await exec(coachTools.getCoachProfile, {});
         if (result.success && result.data.settings) {
           expect(result.data.settings).toHaveProperty('defaultPermissions');
         }
       });
 
       it('returns notification preferences', async () => {
-        const result = await coachTools.getCoachProfile.execute({});
+        const result = await exec(coachTools.getCoachProfile, {});
         if (result.success && result.data.settings?.notificationPreferences) {
           expect(typeof result.data.settings.notificationPreferences.newClient).toBe('boolean');
         }
@@ -1463,26 +1473,26 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('premium user cannot access', async () => {
         const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
-        const result = await premiumCoachTools.getCoachProfile.execute({});
+        const result = await exec(premiumCoachTools.getCoachProfile, {});
         expect(result.success).toBe(false);
       });
     });
 
     describe('Tool 55: getPendingInvitations', () => {
       it('happy path: returns pending invitations', async () => {
-        const result = await coachTools.getPendingInvitations.execute({});
+        const result = await exec(coachTools.getPendingInvitations, {});
         expect(result.success).toBe(true);
       });
 
       it('returns invitations array', async () => {
-        const result = await coachTools.getPendingInvitations.execute({});
+        const result = await exec(coachTools.getPendingInvitations, {});
         if (result.success) {
           expect(Array.isArray(result.data.invitations)).toBe(true);
         }
       });
 
       it('returns pendingCount', async () => {
-        const result = await coachTools.getPendingInvitations.execute({});
+        const result = await exec(coachTools.getPendingInvitations, {});
         if (result.success && result.data.pendingCount !== undefined) {
           expect(typeof result.data.pendingCount).toBe('number');
         }
@@ -1490,7 +1500,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
       it('premium user cannot access', async () => {
         const premiumCoachTools = collectTools(premiumContext, getAllCoachTools());
-        const result = await premiumCoachTools.getPendingInvitations.execute({});
+        const result = await exec(premiumCoachTools.getPendingInvitations, {});
         expect(result.success).toBe(false);
       });
     });
@@ -1502,7 +1512,7 @@ describe('Comprehensive Tool E2E Tests', () => {
   describe('Category 14: Future/Planned Tools', () => {
     describe('Tool 57: getWatchSyncStatus', () => {
       it('happy path: returns coming soon message', async () => {
-        const result = await coachTools.getWatchSyncStatus.execute({
+        const result = await exec(coachTools.getWatchSyncStatus, {
           clientId: testUserId
         });
         expect(result.success).toBe(true);
@@ -1510,21 +1520,21 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('returns expected stub structure', async () => {
-        const result = await coachTools.getWatchSyncStatus.execute({
+        const result = await exec(coachTools.getWatchSyncStatus, {
           clientId: testUserId
         });
         expect(result.success).toBe(true);
       });
 
       it('works with any clientId', async () => {
-        const result = await coachTools.getWatchSyncStatus.execute({
+        const result = await exec(coachTools.getWatchSyncStatus, {
           clientId: '00000000-0000-0000-0000-000000000000'
         });
         expect(result.success).toBe(true);
       });
 
       it('accessible by coach role', async () => {
-        const result = await coachTools.getWatchSyncStatus.execute({
+        const result = await exec(coachTools.getWatchSyncStatus, {
           clientId: testUserId
         });
         expect(result.success).toBe(true);
@@ -1533,7 +1543,7 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 58: analyzeFormVideo', () => {
       it('happy path: returns coming soon message', async () => {
-        const result = await coachTools.analyzeFormVideo.execute({
+        const result = await exec(coachTools.analyzeFormVideo, {
           videoUrl: 'https://example.com/video.mp4',
           exerciseName: 'squat'
         });
@@ -1542,7 +1552,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('accepts any valid URL', async () => {
-        const result = await coachTools.analyzeFormVideo.execute({
+        const result = await exec(coachTools.analyzeFormVideo, {
           videoUrl: 'https://cdn.example.com/videos/deadlift.mp4',
           exerciseName: 'deadlift'
         });
@@ -1550,7 +1560,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('works with different exercise names', async () => {
-        const result = await coachTools.analyzeFormVideo.execute({
+        const result = await exec(coachTools.analyzeFormVideo, {
           videoUrl: 'https://example.com/bench.mp4',
           exerciseName: 'bench press'
         });
@@ -1558,7 +1568,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('accessible by coach role', async () => {
-        const result = await coachTools.analyzeFormVideo.execute({
+        const result = await exec(coachTools.analyzeFormVideo, {
           videoUrl: 'https://example.com/row.mp4',
           exerciseName: 'barbell row'
         });
@@ -1568,13 +1578,13 @@ describe('Comprehensive Tool E2E Tests', () => {
 
     describe('Tool 59: detectPlateau', () => {
       it('happy path: returns coming soon message', async () => {
-        const result = await coachTools.detectPlateau.execute({ clientId: testUserId });
+        const result = await exec(coachTools.detectPlateau, { clientId: testUserId });
         expect(result.success).toBe(true);
         expect(result.data.message).toContain('coming soon');
       });
 
       it('accepts optional exercise ID', async () => {
-        const result = await coachTools.detectPlateau.execute({
+        const result = await exec(coachTools.detectPlateau, {
           clientId: testUserId,
           exerciseId: '11111111-1111-1111-1111-111111111111'
         });
@@ -1582,7 +1592,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('accepts optional days parameter', async () => {
-        const result = await coachTools.detectPlateau.execute({
+        const result = await exec(coachTools.detectPlateau, {
           clientId: testUserId,
           days: 60
         });
@@ -1590,25 +1600,25 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('accessible by coach role', async () => {
-        const result = await coachTools.detectPlateau.execute({ clientId: testUserId });
+        const result = await exec(coachTools.detectPlateau, { clientId: testUserId });
         expect(result.success).toBe(true);
       });
     });
 
     describe('Tool 60: getRecoveryPrediction', () => {
       it('happy path: returns coming soon message', async () => {
-        const result = await coachTools.getRecoveryPrediction.execute({ clientId: testUserId });
+        const result = await exec(coachTools.getRecoveryPrediction, { clientId: testUserId });
         expect(result.success).toBe(true);
         expect(result.data.message).toContain('coming soon');
       });
 
       it('returns expected stub response', async () => {
-        const result = await coachTools.getRecoveryPrediction.execute({ clientId: testUserId });
+        const result = await exec(coachTools.getRecoveryPrediction, { clientId: testUserId });
         expect(result.success).toBe(true);
       });
 
       it('returns clientId in response', async () => {
-        const result = await coachTools.getRecoveryPrediction.execute({ clientId: testUserId });
+        const result = await exec(coachTools.getRecoveryPrediction, { clientId: testUserId });
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.data.clientId).toBe(testUserId);
@@ -1616,7 +1626,7 @@ describe('Comprehensive Tool E2E Tests', () => {
       });
 
       it('accessible by coach role', async () => {
-        const result = await coachTools.getRecoveryPrediction.execute({ clientId: testUserId });
+        const result = await exec(coachTools.getRecoveryPrediction, { clientId: testUserId });
         expect(result.success).toBe(true);
       });
     });

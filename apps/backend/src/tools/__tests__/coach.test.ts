@@ -115,7 +115,8 @@ describe('Coach Tools', () => {
       // Test first tool - should return permission denied for athlete
       const firstFactory = Object.values(toolFactories)[0];
       const tool = firstFactory(athleteContext);
-      const result = await tool.execute({});
+      // AI SDK v5: execute takes (input, options) where options has toolCallId and messages
+      const result = await tool.execute!({}, { toolCallId: 'test-call-id', messages: [] });
 
       expect(result.success).toBe(false);
       expect((result as any).error.code).toBe('PERMISSION_DENIED');

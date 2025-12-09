@@ -10,7 +10,7 @@ import { z } from 'zod';
 import type { Database } from '../db';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyTool = Tool<any, any>;
+export type AnyTool = Tool<any, any>;
 
 // User role hierarchy for permission checks
 export type UserRole = 'free' | 'premium' | 'coach';
@@ -72,7 +72,8 @@ export function createTool<TParams extends z.ZodType, TResult>(
         return tool<any, any>({
           description: definition.description,
           inputSchema: definition.parameters,
-          execute: async () => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          execute: async (_params: any, _options?: any) => ({
             success: false as const,
             error: {
               code: 'PERMISSION_DENIED',
@@ -89,8 +90,10 @@ export function createTool<TParams extends z.ZodType, TResult>(
       description: definition.description,
       inputSchema: definition.parameters,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      execute: async (params: any) => {
+      execute: async (params: any, _options?: any) => {
         // Parse params through Zod to apply defaults
+        // Note: _options is the AI SDK v5 options object (toolCallId, abortSignal, etc.)
+        // We don't use it since our tools get context from the factory closure
         const parsedParams = definition.parameters.parse(params);
         return definition.execute(parsedParams, ctx);
       },

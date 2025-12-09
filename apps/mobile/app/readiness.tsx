@@ -49,12 +49,12 @@ export default function ReadinessScreen() {
     type: 'success',
   });
 
-  const submitMutation = api.readiness.checkIn.useMutation({
+  const submitMutation = api.readiness.submit.useMutation({
     onSuccess: (result) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setToast({
         visible: true,
-        message: `Readiness score: ${result.recoveryScore}%`,
+        message: `Readiness score: ${result.overallScore || 0}%`,
         type: 'success',
       });
       setTimeout(() => router.back(), 1500);
@@ -145,11 +145,10 @@ export default function ReadinessScreen() {
     submitMutation.mutate({
       sleepHours: data.sleepHours!,
       sleepQuality: data.sleepQuality!,
-      stressLevel: data.stressLevel!,
-      sorenessLevel: data.sorenessLevel!,
+      stress: data.stressLevel!,
+      soreness: data.sorenessLevel!,
       energyLevel: data.energyLevel!,
-      motivationLevel: data.motivationLevel!,
-      nutritionQuality: data.nutritionQuality!,
+      motivation: data.motivationLevel!,
     });
   };
 

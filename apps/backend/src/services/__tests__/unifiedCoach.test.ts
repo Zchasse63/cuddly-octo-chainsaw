@@ -338,7 +338,7 @@ describe('Unified Coach V2 Service', () => {
 
   describe('Tool Selection', () => {
     it('should select appropriate tools based on user role', () => {
-      const userRole = 'premium';
+      const userRole: string = 'premium';
       const hasAthleteTools = true;
       const hasCoachTools = userRole === 'coach';
 
@@ -347,7 +347,7 @@ describe('Unified Coach V2 Service', () => {
     });
 
     it('should include coach tools for coach role', () => {
-      const userRole = 'coach';
+      const userRole: string = 'coach';
       const hasCoachTools = userRole === 'coach';
 
       expect(hasCoachTools).toBe(true);

@@ -28,8 +28,8 @@ export default function BadgesScreen() {
   const router = useRouter();
 
   // Fetch user badges
-  const { data: userBadges, isLoading } = api.gamification.getUserBadges.useQuery();
-  const { data: badgesByCategory } = api.gamification.getBadgesByCategory.useQuery();
+  const { data: userBadges, isLoading } = api.gamification.getBadges.useQuery();
+  const { data: badgesByCategory } = api.gamification.getBadgesByCategory.useQuery({ category: 'strength' });
 
   const earnedBadgeIds = new Set(userBadges?.map((b: any) => b.badgeId) || []);
 
@@ -135,8 +135,9 @@ export default function BadgesScreen() {
           {categories.map((category) => {
             const info = categoryInfo[category];
             const Icon = info.icon;
-            const categoryBadges = badgesByCategory?.[category] || [];
-            const earnedCount = categoryBadges.filter((b: any) => earnedBadgeIds.has(b.id)).length;
+            // badgesByCategory returns badges for a single category, not all categories
+            const categoryBadges = category === 'strength' && badgesByCategory ? badgesByCategory : [];
+            const earnedCount = Array.isArray(categoryBadges) ? categoryBadges.filter((b: { id: string }) => earnedBadgeIds.has(b.id)).length : 0;
 
             return (
               <View
@@ -188,9 +189,10 @@ export default function BadgesScreen() {
         {categories.map((category) => {
           const info = categoryInfo[category];
           const Icon = info.icon;
-          const categoryBadges = badgesByCategory?.[category] || [];
+          // badgesByCategory returns badges for a single category (strength), not all categories
+          const categoryBadges = category === 'strength' && badgesByCategory ? badgesByCategory : [];
 
-          if (categoryBadges.length === 0) return null;
+          if (!Array.isArray(categoryBadges) || categoryBadges.length === 0) return null;
 
           return (
             <View key={category} style={{ marginBottom: spacing.xl }}>

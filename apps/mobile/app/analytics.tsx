@@ -39,10 +39,10 @@ export default function AnalyticsScreen() {
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
 
   // Fetch analytics data
-  const { data: stats } = api.analytics.getStats.useQuery({ timeRange });
-  const { data: strengthProgress } = api.analytics.getStrengthProgress.useQuery({ timeRange });
-  const { data: runningProgress } = api.analytics.getRunningProgress.useQuery({ timeRange });
-  const { data: weeklyVolume } = api.analytics.getWeeklyVolume.useQuery({ timeRange });
+  const { data: stats } = api.analytics.getDashboardSummary.useQuery();
+  const { data: strengthProgress } = api.analytics.getAllExerciseAnalytics.useQuery({ sortBy: 'recent', limit: 10 });
+  const { data: runningProgress } = api.running.getStats.useQuery({ period: 'month' });
+  const { data: weeklyVolume } = api.workout.weeklyVolume.useQuery();
 
   const screenWidth = Dimensions.get('window').width - spacing.md * 2;
 
@@ -112,26 +112,26 @@ export default function AnalyticsScreen() {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg }}>
           <StatBox
             icon={<Dumbbell size={20} color={colors.accent.blue} />}
-            value={stats?.totalWorkouts?.toString() || '0'}
+            value={stats?.today?.workoutCount?.toString() || '0'}
             label="Workouts"
             colors={colors}
           />
           <StatBox
             icon={<Footprints size={20} color="#4ECDC4" />}
-            value={stats?.totalRuns?.toString() || '0'}
-            label="Runs"
+            value={stats?.week?.workoutCount?.toString() || '0'}
+            label="This Week"
             colors={colors}
           />
           <StatBox
             icon={<Clock size={20} color="#FFE66D" />}
-            value={formatHours(stats?.totalMinutes || 0)}
+            value={formatHours(stats?.week?.totalDurationMinutes || 0)}
             label="Training Time"
             colors={colors}
           />
           <StatBox
             icon={<Flame size={20} color="#FF6B6B" />}
-            value={stats?.longestStreak?.toString() || '0'}
-            label="Best Streak"
+            value={stats?.activeGoals?.length?.toString() || '0'}
+            label="Active Goals"
             colors={colors}
           />
         </View>
@@ -157,19 +157,19 @@ export default function AnalyticsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Total Volume</Text>
                 <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                  {formatWeight(stats?.totalVolume || 0, weightUnit)}
+                  {formatWeight(stats?.today?.totalVolume || 0, weightUnit)}
                 </Text>
               </View>
               <View style={{ flex: 1, alignItems: 'center' }}>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Total Sets</Text>
                 <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                  {stats?.totalSets || 0}
+                  {stats?.today?.totalSets || 0}
                 </Text>
               </View>
               <View style={{ flex: 1, alignItems: 'flex-end' }}>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>PRs Set</Text>
                 <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: '#FFE66D' }}>
-                  {stats?.prsSet || 0}
+                  {stats?.today?.prCount || 0}
                 </Text>
               </View>
             </View>
@@ -182,7 +182,7 @@ export default function AnalyticsScreen() {
                 Weekly Volume Trend
               </Text>
               <View style={{ height: 120 }}>
-                <SimpleBarChart data={weeklyVolume} colors={colors} color={colors.accent.blue} />
+                <SimpleBarChart data={weeklyVolume.map((d) => ({ value: Number(d.volume) || 0, label: String(d.date || '') }))} colors={colors} color={colors.accent.blue} />
               </View>
             </Card>
           )}
@@ -209,39 +209,27 @@ export default function AnalyticsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Total Distance</Text>
                 <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                  {formatDistance((stats?.totalDistanceMeters || 0), distanceUnit)}
+                  {formatDistance(Number(runningProgress?.total_distance || 0), distanceUnit)}
                 </Text>
               </View>
               <View style={{ flex: 1, alignItems: 'center' }}>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Avg Pace</Text>
                 <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                  {formatPace(stats?.avgPace || 0, distanceUnit)}
+                  {formatPace(Number(runningProgress?.avg_pace || 0), distanceUnit)}
                 </Text>
               </View>
               <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Elevation</Text>
+                <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Total Runs</Text>
                 <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                  {Math.round(stats?.totalElevation || 0)}m
+                  {Number(runningProgress?.total_runs || 0)}
                 </Text>
               </View>
             </View>
           </Card>
-
-          {/* Running Progress Chart */}
-          {runningProgress && runningProgress.length > 0 && (
-            <Card>
-              <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.md }}>
-                Weekly Mileage
-              </Text>
-              <View style={{ height: 120 }}>
-                <SimpleBarChart data={runningProgress} colors={colors} color="#4ECDC4" />
-              </View>
-            </Card>
-          )}
         </View>
 
         {/* Top Exercises */}
-        {strengthProgress && strengthProgress.topExercises && (
+        {strengthProgress && strengthProgress.length > 0 && (
           <View style={{ marginBottom: spacing.lg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
               <TrendingUp size={18} color={colors.text.primary} />
@@ -257,7 +245,7 @@ export default function AnalyticsScreen() {
               </Text>
             </View>
 
-            {strengthProgress.topExercises.map((exercise: any, index: number) => (
+            {strengthProgress.slice(0, 5).map((exerciseAnalytics, index: number) => (
               <Card key={index} style={{ marginBottom: spacing.sm }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <View
@@ -277,17 +265,17 @@ export default function AnalyticsScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.medium, color: colors.text.primary }}>
-                      {exercise.name}
+                      {exerciseAnalytics.exercise?.name || 'Unknown'}
                     </Text>
                     <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
-                      {exercise.setCount} sets • {formatWeight(exercise.totalVolume, weightUnit)} volume
+                      {exerciseAnalytics.totalSets || 0} sets • {formatWeight(exerciseAnalytics.totalVolume || 0, weightUnit)} volume
                     </Text>
                   </View>
-                  {exercise.pr && (
+                  {exerciseAnalytics.currentMaxWeight && (
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                       <Trophy size={14} color="#FFE66D" />
                       <Text style={{ fontSize: fontSize.sm, color: '#FFE66D', marginLeft: spacing.xs }}>
-                        {formatWeight(exercise.pr, weightUnit)}
+                        {formatWeight(exerciseAnalytics.currentMaxWeight, weightUnit)}
                       </Text>
                     </View>
                   )}

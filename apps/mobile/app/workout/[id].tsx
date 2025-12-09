@@ -42,6 +42,10 @@ export default function WorkoutDetailScreen() {
     );
   }
 
+  // Destructure the nested workout data
+  const workoutData = workout.workout;
+  const sets = workout.sets;
+
   const formatDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -58,26 +62,26 @@ export default function WorkoutDetailScreen() {
   };
 
   // Group sets by exercise
-  const setsByExercise = workout.sets?.reduce((acc, set) => {
+  const setsByExercise = sets?.reduce((acc, set) => {
     const exerciseName = set.exerciseId || 'Unknown';
     if (!acc[exerciseName]) {
       acc[exerciseName] = [];
     }
     acc[exerciseName].push(set);
     return acc;
-  }, {} as Record<string, typeof workout.sets>);
+  }, {} as Record<string, typeof sets>);
 
-  const totalVolume = workout.sets?.reduce((acc, set) => {
+  const totalVolume = sets?.reduce((acc, set) => {
     return acc + (set.weight || 0) * (set.reps || 0);
   }, 0) || 0;
 
-  const prs = workout.sets?.filter(set => set.isPr) || [];
+  const prs = sets?.filter(set => set.isPr) || [];
 
   return (
     <>
       <Stack.Screen
         options={{
-          title: workout.name || 'Workout',
+          title: workoutData.name || 'Workout',
           headerBackTitle: 'Back',
         }}
       />
@@ -93,12 +97,12 @@ export default function WorkoutDetailScreen() {
                 marginBottom: spacing.sm,
               }}
             >
-              {workout.name || 'Workout'}
+              {workoutData.name || 'Workout'}
             </Text>
             <Text style={{ color: colors.text.secondary, marginBottom: spacing.md }}>
-              {workout.completedAt
-                ? formatDate(workout.completedAt)
-                : formatDate(workout.startedAt)}
+              {workoutData.completedAt
+                ? formatDate(workoutData.completedAt)
+                : formatDate(workoutData.createdAt)}
             </Text>
 
             <View
@@ -120,7 +124,7 @@ export default function WorkoutDetailScreen() {
                     marginTop: spacing.xs,
                   }}
                 >
-                  {workout.duration ? formatDuration(workout.duration) : '--'}
+                  {workoutData.duration ? formatDuration(workoutData.duration) : '--'}
                 </Text>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
                   Duration
@@ -272,7 +276,7 @@ export default function WorkoutDetailScreen() {
           )}
 
           {/* Notes */}
-          {workout.notes && (
+          {workoutData.notes && (
             <>
               <Text
                 style={{
@@ -286,7 +290,7 @@ export default function WorkoutDetailScreen() {
                 Notes
               </Text>
               <Card>
-                <Text style={{ color: colors.text.secondary }}>{workout.notes}</Text>
+                <Text style={{ color: colors.text.secondary }}>{workoutData.notes}</Text>
               </Card>
             </>
           )}

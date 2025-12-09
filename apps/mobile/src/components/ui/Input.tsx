@@ -12,7 +12,7 @@ import { Eye, EyeOff } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { heights, borderRadius, fontSize, fontWeight, spacing } from '../../theme/tokens';
 
-interface InputProps {
+export interface InputProps {
   type?: 'text' | 'email' | 'password' | 'number';
   label?: string;
   placeholder?: string;
@@ -25,6 +25,7 @@ interface InputProps {
   disabled?: boolean;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   autoCorrect?: boolean;
+  autoFocus?: boolean;
 }
 
 export function Input({
@@ -40,6 +41,7 @@ export function Input({
   disabled = false,
   autoCapitalize,
   autoCorrect,
+  autoFocus = false,
 }: InputProps) {
   const { colors } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
@@ -108,6 +110,7 @@ export function Input({
           keyboardType={type === 'email' ? 'email-address' : type === 'number' ? 'numeric' : 'default'}
           autoCapitalize={autoCapitalize ?? (type === 'email' ? 'none' : 'sentences')}
           autoCorrect={autoCorrect ?? type !== 'email'}
+          autoFocus={autoFocus}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
         />

@@ -47,7 +47,8 @@ describe('createTool', () => {
     });
 
     const tool = toolFactory(mockContext);
-    const result = await tool.execute({ input: 'hello' });
+    // AI SDK v5: execute takes (input, options) where options has toolCallId and messages
+    const result = await tool.execute!({ input: 'hello' }, { toolCallId: 'test-call-id', messages: [] });
 
     expect(result.success).toBe(true);
     expect(result.data).toBe('hello');
@@ -55,8 +56,9 @@ describe('createTool', () => {
   });
 });
 
-// Helper type for tool with execute function
-type ExecutableTool = { execute: (params: any) => Promise<any>; description: string; parameters: any };
+// Helper type for tool with execute function (AI SDK v5 signature)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ExecutableTool = { execute: (params: any, options?: any) => Promise<any>; description: string; inputSchema: any };
 
 describe('collectTools', () => {
   const testTools = {
@@ -95,16 +97,18 @@ describe('collectTools', () => {
 
   it('should allow free user to execute free tools', async () => {
     const freeContext: ToolContext = { ...mockContext, userRole: 'free' };
-    const collected = collectTools(freeContext, testTools) as Record<string, ExecutableTool>;
-    const result = await collected.toolA.execute({ value: 5 });
+    const collected = collectTools(freeContext, testTools) as unknown as Record<string, ExecutableTool>;
+    const opts = { toolCallId: 'test-call-id', messages: [] };
+    const result = await collected.toolA.execute({ value: 5 }, opts);
 
     expect(result).toEqual({ success: true, data: 10 });
   });
 
   it('should deny free user access to premium tools', async () => {
     const freeContext: ToolContext = { ...mockContext, userRole: 'free' };
-    const collected = collectTools(freeContext, testTools) as Record<string, ExecutableTool>;
-    const result = await collected.toolB.execute({});
+    const collected = collectTools(freeContext, testTools) as unknown as Record<string, ExecutableTool>;
+    const opts = { toolCallId: 'test-call-id', messages: [] };
+    const result = await collected.toolB.execute({}, opts);
 
     expect(result.success).toBe(false);
     expect((result as any).error.code).toBe('PERMISSION_DENIED');
@@ -112,19 +116,20 @@ describe('collectTools', () => {
 
   it('should allow premium user to execute premium tools', async () => {
     const premiumContext: ToolContext = { ...mockContext, userRole: 'premium' };
-    const collected = collectTools(premiumContext, testTools) as Record<string, ExecutableTool>;
-    const result = await collected.toolB.execute({});
+    const collected = collectTools(premiumContext, testTools) as unknown as Record<string, ExecutableTool>;
+    const opts = { toolCallId: 'test-call-id', messages: [] };
+    const result = await collected.toolB.execute({}, opts);
 
     expect(result.success).toBe(true);
   });
 
   it('should allow coach to execute all tools', async () => {
     const coachContext: ToolContext = { ...mockContext, userRole: 'coach' };
-    const collected = collectTools(coachContext, testTools) as Record<string, ExecutableTool>;
-
-    const resultA = await collected.toolA.execute({ value: 5 });
-    const resultB = await collected.toolB.execute({});
-    const resultC = await collected.toolC.execute({});
+    const collected = collectTools(coachContext, testTools) as unknown as Record<string, ExecutableTool>;
+    const opts = { toolCallId: 'test-call-id', messages: [] };
+    const resultA = await collected.toolA.execute({ value: 5 }, opts);
+    const resultB = await collected.toolB.execute({}, opts);
+    const resultC = await collected.toolC.execute({}, opts);
 
     expect(resultA.success).toBe(true);
     expect(resultB.success).toBe(true);

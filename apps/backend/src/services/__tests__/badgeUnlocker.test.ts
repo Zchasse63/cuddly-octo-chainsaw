@@ -23,7 +23,6 @@ describe('BadgeUnlocker', () => {
     await db.insert(userProfiles).values({
       userId: testUserId,
       name: 'Badge Test User',
-      email: TEST_EMAIL,
       tier: 'premium',
     });
   });

@@ -19,7 +19,12 @@
  * - program_adherence
  */
 
-import { AbstractPowerSyncDatabase } from '@powersync/react-native';
+// PowerSync is not yet installed - using placeholder type
+// TODO: Install @powersync/react-native when ready to implement offline-first
+type AbstractPowerSyncDatabase = {
+  execute: (sql: string, params?: unknown[]) => Promise<unknown>;
+  getAll: <T>(sql: string, params?: unknown[]) => Promise<T[]>;
+};
 
 // PowerSync schema definition
 export const PowerSyncSchema = {

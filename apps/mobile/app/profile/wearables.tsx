@@ -310,7 +310,7 @@ export default function WearablesScreen() {
         </Text>
 
         {availableIntegrations.map((integration) => {
-          const isConnecting = isConnecting === integration.id;
+          const isCurrentlyConnecting = isConnecting === integration.id;
           const isAlreadyConnected = connectedDevices.some(
             (d) => d.id === integration.id || d.brand.toLowerCase().includes(integration.brand.toLowerCase())
           );
@@ -361,7 +361,7 @@ export default function WearablesScreen() {
                 </View>
                 <TouchableOpacity
                   onPress={() => handleConnect(integration.id)}
-                  disabled={isConnecting || isAlreadyConnected}
+                  disabled={isCurrentlyConnecting || isAlreadyConnected}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -373,7 +373,7 @@ export default function WearablesScreen() {
                     paddingVertical: spacing.sm,
                   }}
                 >
-                  {isConnecting ? (
+                  {isCurrentlyConnecting ? (
                     <ActivityIndicator size="small" color={colors.text.onAccent} />
                   ) : (
                     <>

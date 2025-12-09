@@ -18,7 +18,7 @@ import { heights, borderRadius, fontSize, fontWeight, springs } from '../../them
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
-interface ButtonProps {
+export interface ButtonProps {
   variant?: 'primary' | 'secondary' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   fullWidth?: boolean;
@@ -27,7 +27,8 @@ interface ButtonProps {
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   onPress: () => void;
-  children: string;
+  children: string | React.ReactNode;
+  style?: ViewStyle;
 }
 
 export function Button({
@@ -40,6 +41,7 @@ export function Button({
   rightIcon,
   onPress,
   children,
+  style,
 }: ButtonProps) {
   const { colors } = useTheme();
   const scale = useSharedValue(1);
@@ -125,7 +127,7 @@ export function Button({
 
   return (
     <AnimatedTouchable
-      style={[buttonStyle, animatedStyle]}
+      style={[buttonStyle, animatedStyle, style]}
       onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}

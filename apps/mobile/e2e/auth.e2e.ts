@@ -10,7 +10,8 @@ describe('Authentication Flow', () => {
   });
 
   afterAll(async () => {
-    await device.sendUserInteraction({ type: 'shake' });
+    // Clean up after tests
+    await device.terminateApp();
   });
 
   it('should display login screen on app start', async () => {
@@ -18,7 +19,7 @@ describe('Authentication Flow', () => {
   });
 
   it('should navigate to signup when signup button is tapped', async () => {
-    await element(by.id('signup-button')).multiTap();
+    await element(by.id('signup-button')).multiTap(2);
     await detoxExpect(element(by.id('signup-screen'))).toBeVisible();
   });
 

@@ -40,7 +40,7 @@ describe('Voice Logging Flow', () => {
   });
 
   it('should allow editing parsed data', async () => {
-    await element(by.id('exercise-name')).multiTap();
+    await element(by.id('exercise-name')).multiTap(2);
     await element(by.id('exercise-name')).clearText();
     await element(by.id('exercise-name')).typeText('Squat');
     await detoxExpect(element(by.text('Squat'))).toBeVisible();
@@ -68,7 +68,7 @@ describe('Voice Logging Flow', () => {
     await element(by.id('voice-log-button')).tap();
     // Simulate unclear audio
     await element(by.id('record-button')).tap();
-    await device.sendUserInteraction({ type: 'shake' });
+    await device.shake();
     await element(by.id('stop-button')).tap();
     await detoxExpect(element(by.text(/unclear|try again/))).toBeVisible();
   });

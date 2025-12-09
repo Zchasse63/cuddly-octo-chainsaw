@@ -18,7 +18,7 @@ export const exerciseRouter = router({
     .query(async ({ ctx, input }) => {
       const { limit = 50, offset = 0, muscleGroup, equipment, search } = input || {};
 
-      let query = ctx.db.select().from(exercises);
+      const query = ctx.db.select().from(exercises);
 
       // Build where conditions
       const conditions = [];

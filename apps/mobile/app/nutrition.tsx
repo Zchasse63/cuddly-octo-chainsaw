@@ -23,16 +23,11 @@ export default function NutritionScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [waterGlasses, setWaterGlasses] = useState(0);
+  const [localWaterGlasses, setLocalWaterGlasses] = useState(0);
 
   // Fetch today's nutrition data
   const { data: todayNutrition, refetch } = api.nutrition.getToday.useQuery();
   const { data: goals } = api.nutrition.getGoals.useQuery();
-
-  // Log water mutation
-  const logWaterMutation = api.nutrition.logWater.useMutation({
-    onSuccess: () => refetch(),
-  });
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -41,20 +36,21 @@ export default function NutritionScreen() {
   };
 
   const handleLogWater = () => {
-    logWaterMutation.mutate({ glasses: 1 });
+    // Water tracking is local for now - backend doesn't have logWater endpoint
+    setLocalWaterGlasses((prev) => prev + 1);
   };
 
-  const caloriesGoal = goals?.caloriesGoal || 2000;
-  const proteinGoal = goals?.proteinGoal || 150;
-  const carbsGoal = goals?.carbsGoal || 250;
-  const fatGoal = goals?.fatGoal || 65;
-  const waterGoal = goals?.waterGoal || 8;
+  const caloriesGoal = goals?.targetCalories || 2000;
+  const proteinGoal = goals?.targetProtein || 150;
+  const carbsGoal = goals?.targetCarbohydrates || 250;
+  const fatGoal = goals?.targetFat || 65;
+  const waterGoal = 8; // Default water goal
 
   const calories = todayNutrition?.calories || 0;
   const protein = todayNutrition?.protein || 0;
-  const carbs = todayNutrition?.carbs || 0;
+  const carbs = todayNutrition?.carbohydrates || 0;
   const fat = todayNutrition?.fat || 0;
-  const water = todayNutrition?.waterGlasses || 0;
+  const water = localWaterGlasses;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
@@ -218,7 +214,6 @@ export default function NutritionScreen() {
             <Button
               size="sm"
               onPress={handleLogWater}
-              disabled={logWaterMutation.isPending}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Plus size={16} color={colors.text.onAccent} />
