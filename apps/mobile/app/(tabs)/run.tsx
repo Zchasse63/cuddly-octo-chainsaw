@@ -104,13 +104,13 @@ export default function RunScreen() {
   const pulseScale = useSharedValue(1);
 
   // Fetch user's shoes
-  const { data: shoes } = api.running.getShoes.useQuery(undefined, { enabled: !!user });
+  const { data: shoes } = api.shoes.getAll.useQuery(undefined, { enabled: !!user });
 
   // Save run mutation
-  const saveRunMutation = api.running.saveActivity.useMutation({
+  const saveRunMutation = api.running.logActivity.useMutation({
     onSuccess: (data) => {
       setToast({ visible: true, message: 'Run saved!', type: 'success' });
-      router.push(`/run/${data.id}`);
+      router.push(`/run/${data.activity.id}`);
     },
     onError: (error) => {
       setToast({ visible: true, message: error.message, type: 'error' });
@@ -296,12 +296,12 @@ export default function RunScreen() {
 
     saveRunMutation.mutate({
       runType,
-      startedAt: startTimeRef.current.toISOString(),
-      completedAt: new Date().toISOString(),
+      startedAt: startTimeRef.current,
+      completedAt: new Date(),
       distanceMeters: stats.distance,
       durationSeconds: stats.duration,
       avgPaceSecondsPerKm: stats.avgPace,
-      calories: stats.calories,
+      caloriesBurned: stats.calories,
       shoeId: selectedShoeId || undefined,
       splits: stats.splits.map((s, i) => ({
         splitNumber: i + 1,

@@ -46,13 +46,16 @@ export default function HealthScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [timePeriod, setTimePeriod] = useState<7 | 14 | 30 | 60>(14);
 
-  // Fetch health intelligence data
-  const { data: healthData, refetch } = api.analytics.getHealthIntelligence.useQuery({
-    days: timePeriod,
+  // Fetch health intelligence data (returns { insights: string })
+  const { data: healthData, refetch } = api.analytics.getAIHealthInsights.useQuery({
+    period: timePeriod,
   });
 
   // Fetch injury risk assessment
   const { data: injuryRisk } = api.injury.getRiskAssessment.useQuery();
+
+  // Fetch readiness data for scores
+  const { data: readinessData } = api.readiness.today.useQuery();
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -78,11 +81,12 @@ export default function HealthScreen() {
     return colors.text.tertiary;
   };
 
-  const healthScore = healthData?.overallScore || 75;
-  const recoveryScore = healthData?.recoveryScore || 80;
-  const readinessScore = healthData?.readinessScore || 72;
+  // Use readiness data for scores, with defaults
+  const healthScore = readinessData?.overallScore || 75;
+  const recoveryScore = readinessData?.overallScore || 80; // Use overall as recovery proxy
+  const readinessScore = readinessData?.overallScore || 72;
 
-  const correlations: Correlation[] = healthData?.correlations || [
+  const correlations: Correlation[] = [
     {
       factor1: 'Sleep Quality',
       factor2: 'Workout Performance',
@@ -109,10 +113,11 @@ export default function HealthScreen() {
     },
   ];
 
+  // Use readiness data for metrics with defaults
   const metrics: HealthMetric[] = [
     {
-      label: 'Avg Sleep',
-      value: healthData?.avgSleep || 7.2,
+      label: 'Sleep Hours',
+      value: readinessData?.sleepHours || 7.2,
       unit: 'hrs',
       trend: 'up',
       trendValue: '+0.3',
@@ -120,26 +125,26 @@ export default function HealthScreen() {
     },
     {
       label: 'HRV',
-      value: healthData?.avgHrv || 52,
+      value: readinessData?.hrvScore || 52,
       unit: 'ms',
       trend: 'stable',
       optimal: { min: 40, max: 80 },
     },
     {
       label: 'Resting HR',
-      value: healthData?.avgRestingHr || 58,
+      value: readinessData?.restingHr || 58,
       unit: 'bpm',
       trend: 'down',
       trendValue: '-2',
       optimal: { min: 50, max: 70 },
     },
     {
-      label: 'Weekly Volume',
-      value: healthData?.weeklyVolume || 45200,
-      unit: 'lbs',
+      label: 'Readiness',
+      value: readinessData?.overallScore || 75,
+      unit: '%',
       trend: 'up',
-      trendValue: '+12%',
-      optimal: { min: 30000, max: 60000 },
+      trendValue: '+5%',
+      optimal: { min: 60, max: 100 },
     },
   ];
 
@@ -147,7 +152,7 @@ export default function HealthScreen() {
     return metric.value >= metric.optimal.min && metric.value <= metric.optimal.max;
   };
 
-  const riskLevel = injuryRisk?.riskLevel || 'low';
+  const riskLevel = injuryRisk?.overallRisk || 'low';
   const riskColor =
     riskLevel === 'high'
       ? colors.semantic.error
@@ -273,7 +278,7 @@ export default function HealthScreen() {
                   {riskLevel === 'high' ? 'High Injury Risk' : 'Moderate Injury Risk'}
                 </Text>
                 <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>
-                  {injuryRisk?.mainReason || 'Training load has increased significantly'}
+                  {injuryRisk?.factors?.[0]?.description || 'Training load has increased significantly'}
                 </Text>
               </View>
               <ChevronRight size={20} color={riskColor} />
@@ -413,7 +418,7 @@ export default function HealthScreen() {
         </Text>
 
         <Card>
-          {(healthData?.recommendations || [
+          {([
             'Prioritize 7-8 hours of sleep for optimal recovery',
             'Consider a rest day if recovery score drops below 50%',
             'Increase protein intake on heavy training days',

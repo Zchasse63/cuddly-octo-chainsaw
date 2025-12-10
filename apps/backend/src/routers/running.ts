@@ -159,7 +159,7 @@ export const runningRouter = router({
           AND started_at >= ${startDate}
       `);
 
-      return result.rows[0];
+      return (result as unknown as Array<Record<string, unknown>>)[0];
     }),
 
   // ==================== Programs ====================

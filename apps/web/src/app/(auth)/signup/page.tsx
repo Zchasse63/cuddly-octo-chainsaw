@@ -16,9 +16,10 @@ export default function SignupPage() {
   const [error, setError] = useState('');
 
   const signUp = trpc.auth.signUp.useMutation({
-    onSuccess: (data) => {
-      localStorage.setItem('token', data.token);
-      router.push('/dashboard');
+    onSuccess: () => {
+      // Account created - redirect to login page
+      // User may need to verify email depending on Supabase settings
+      router.push('/login?registered=true');
     },
     onError: (err) => {
       setError(err.message || 'Failed to create account');

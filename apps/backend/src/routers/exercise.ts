@@ -18,7 +18,7 @@ export const exerciseRouter = router({
     .query(async ({ ctx, input }) => {
       const { limit = 50, offset = 0, muscleGroup, equipment, search } = input || {};
 
-      let query = ctx.db.select().from(exercises);
+      const query = ctx.db.select().from(exercises);
 
       // Build where conditions
       const conditions = [];
@@ -81,7 +81,7 @@ export const exerciseRouter = router({
         LIMIT 5
       `);
 
-      return results.rows;
+      return results as unknown as Array<Record<string, unknown>>;
     }),
 
   // Create custom exercise
@@ -95,8 +95,15 @@ export const exerciseRouter = router({
           'quadriceps', 'hamstrings', 'glutes', 'calves', 'abs', 'obliques',
           'lower_back', 'traps', 'lats', 'full_body'
         ]),
-        secondaryMuscles: z.array(z.string()).optional(),
-        equipment: z.array(z.string()).optional(),
+        secondaryMuscles: z.array(z.enum([
+          'chest', 'back', 'shoulders', 'biceps', 'triceps', 'forearms',
+          'quadriceps', 'hamstrings', 'glutes', 'calves', 'abs', 'obliques',
+          'lower_back', 'traps', 'lats', 'full_body'
+        ])).optional(),
+        equipment: z.array(z.enum([
+          'barbell', 'dumbbell', 'kettlebell', 'cable', 'machine',
+          'bodyweight', 'bands', 'smith_machine', 'ez_bar', 'trap_bar'
+        ])).optional(),
         isCompound: z.boolean().optional(),
         isUnilateral: z.boolean().optional(),
       })

@@ -415,7 +415,7 @@ export const analyticsRouter = router({
   getHealthCorrelations: protectedProcedure
     .input(
       z.object({
-        period: z.enum([7, 14, 30, 60]).default(30),
+        period: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]).default(30),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -433,7 +433,7 @@ export const analyticsRouter = router({
   getAIHealthInsights: protectedProcedure
     .input(
       z.object({
-        period: z.enum([7, 14, 30, 60]).default(30),
+        period: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]).default(30),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -491,7 +491,7 @@ export const analyticsRouter = router({
       today: todayAnalytics,
       week: weekAnalytics,
       activeGoals,
-      unreadInsightsCount: Number(unreadInsights.rows[0]?.count || 0),
+      unreadInsightsCount: Number((unreadInsights as unknown as Array<{ count: number }>)[0]?.count || 0),
       trainingReadiness: trainingReadiness?.acuteChronicRatio || null,
     };
   }),

@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, timestamp, integer, real, boolean, pgEnum } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 import { users } from './users';
 import { exercises } from './exercises';
 
@@ -78,6 +79,22 @@ export const personalRecords = pgTable('personal_records', {
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// Relations for personalRecords
+export const personalRecordsRelations = relations(personalRecords, ({ one }) => ({
+  exercise: one(exercises, {
+    fields: [personalRecords.exerciseId],
+    references: [exercises.id],
+  }),
+  user: one(users, {
+    fields: [personalRecords.userId],
+    references: [users.id],
+  }),
+  workoutSet: one(workoutSets, {
+    fields: [personalRecords.workoutSetId],
+    references: [workoutSets.id],
+  }),
+}));
 
 export type Workout = typeof workouts.$inferSelect;
 export type NewWorkout = typeof workouts.$inferInsert;

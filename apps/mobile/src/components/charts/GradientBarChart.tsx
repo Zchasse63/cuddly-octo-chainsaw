@@ -288,12 +288,7 @@ export function ProgressRing({
     }
   }, [value, animate]);
 
-  const progressStyle = useAnimatedStyle(() => {
-    const strokeDashoffset = circumference * (1 - progress.value);
-    return {
-      strokeDashoffset,
-    };
-  });
+  // Note: progressStyle was removed as it's not used in the simplified non-SVG implementation
 
   return (
     <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>

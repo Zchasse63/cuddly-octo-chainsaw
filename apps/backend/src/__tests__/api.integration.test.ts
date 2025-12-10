@@ -1,28 +1,14 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 /**
- * Integration tests for the VoiceFit API
- * These tests verify the complete flow from API request to database response
+ * API Contract and Validation Tests
+ * Tests data structures, validation logic, and business calculations
+ *
+ * For actual API integration tests with real database calls,
+ * see the integration/ directory tests.
  */
 
-// Mock Supabase client
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'test-user-id' } }, error: null }),
-    },
-    from: vi.fn(() => ({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: null }),
-    })),
-  })),
-}));
-
-describe('API Integration Tests', () => {
+describe('API Contract Tests', () => {
   describe('Authentication', () => {
     it('should reject requests without authorization header', async () => {
       const mockRequest = new Request('http://localhost:3000/api/workouts', {
@@ -70,7 +56,7 @@ describe('API Integration Tests', () => {
       });
 
       it('should reject invalid workout payload', () => {
-        const invalidPayload = {
+        const invalidPayload: { name?: string; exercises: unknown[] } = {
           // Missing name
           exercises: [],
         };
@@ -389,7 +375,16 @@ describe('Data Validation', () => {
     const validDate = '2024-01-15T08:30:00Z';
     const date = new Date(validDate);
 
-    expect(date.toISOString()).toBe(validDate);
+    // toISOString() always includes milliseconds, so we need to match the pattern
+    const isoString = date.toISOString();
+    expect(isoString).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    // Verify the date parses correctly
+    expect(date.getUTCFullYear()).toBe(2024);
+    expect(date.getUTCMonth()).toBe(0); // January is 0
+    expect(date.getUTCDate()).toBe(15);
+    expect(date.getUTCHours()).toBe(8);
+    expect(date.getUTCMinutes()).toBe(30);
+    expect(date.getUTCSeconds()).toBe(0);
   });
 
   it('should sanitize user input', () => {

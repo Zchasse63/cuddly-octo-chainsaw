@@ -593,14 +593,16 @@ export const calendarRouter = router({
       const now = new Date();
 
       switch (input.period) {
-        case 'week':
+        case 'week': {
           const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
           startDate = weekAgo.toISOString().split('T')[0];
           break;
-        case 'month':
+        }
+        case 'month': {
           const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
           startDate = monthAgo.toISOString().split('T')[0];
           break;
+        }
         default:
           startDate = '1970-01-01';
       }

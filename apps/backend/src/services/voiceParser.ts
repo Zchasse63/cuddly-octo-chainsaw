@@ -1,4 +1,4 @@
-import { generateCompletion, TEMPERATURES } from '../lib/grok';
+import { generateCompletion, TEMPERATURES } from '../lib/ai';
 import { z } from 'zod';
 
 // Output schema for voice parser
@@ -43,10 +43,20 @@ OUTPUT FORMAT:
 
 Return ONLY valid JSON.`;
 
+/**
+ * Parse voice commands into structured workout data.
+ * Uses grok-3-mini-fast for fast, lightweight JSON extraction.
+ *
+ * @param transcript - The voice transcript to parse
+ * @param context - Optional session context for resolving relative references
+ * @returns Structured workout data with confidence score
+ */
 export async function parseVoiceCommand(
   transcript: string,
   context?: VoiceSessionContext
 ): Promise<VoiceParseResult> {
+  const startTime = Date.now();
+
   const userPrompt = `CONTEXT:
 - Current exercise: ${context?.currentExercise || 'not set'}
 - Last weight used: ${context?.lastWeight || 'unknown'} ${context?.lastWeightUnit || ''}
@@ -62,8 +72,14 @@ Parse this into structured workout data.`;
       userPrompt,
       temperature: TEMPERATURES.parsing,
       maxTokens: 300,
+      // Use grok-4-fast for fast voice parsing (~1100ms vs ~3100ms for mini)
       model: 'fast',
     });
+
+    // Log latency in non-test environments
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('[VoiceParser] Latency:', Date.now() - startTime, 'ms');
+    }
 
     // Clean and parse response
     const cleanedResponse = response.trim().replace(/```json\n?|\n?```/g, '');

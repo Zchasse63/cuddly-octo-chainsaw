@@ -1,4 +1,4 @@
-import { generateCompletion, TEMPERATURES } from '../lib/grok';
+import { generateCompletion, TEMPERATURES } from '../lib/ai';
 import { z } from 'zod';
 
 // Injury detection result schema

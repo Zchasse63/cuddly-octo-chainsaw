@@ -51,7 +51,7 @@ export default function AddShoeScreen() {
   const [notes, setNotes] = useState('');
   const [isDefault, setIsDefault] = useState(false);
 
-  const createShoeMutation = api.running.createShoe.useMutation({
+  const createShoeMutation = api.shoes.create.useMutation({
     onSuccess: () => {
       router.back();
     },
@@ -61,22 +61,21 @@ export default function AddShoeScreen() {
   });
 
   const handleSave = () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Please enter a shoe name');
+    if (!brand.trim() || !model.trim()) {
+      Alert.alert('Error', 'Please enter brand and model');
       return;
     }
 
-    // Convert distances to meters for storage
-    const mileageMultiplier = distanceUnit === 'mi' ? 1609.34 : 1000;
+    // Convert distances to miles for the API (it converts to meters internally)
+    const mileageMultiplier = distanceUnit === 'mi' ? 1 : 0.621371; // km to miles
 
     createShoeMutation.mutate({
-      name: name.trim(),
-      brand: brand || undefined,
-      model: model || undefined,
-      type: shoeType,
-      purchaseDate: purchaseDate,
-      initialDistance: parseFloat(initialMileage) * mileageMultiplier,
-      maxDistance: parseFloat(maxMileage) * mileageMultiplier,
+      brand: brand.trim(),
+      model: model.trim(),
+      nickname: name.trim() || undefined,
+      purchaseDate: new Date(purchaseDate),
+      initialMileage: parseFloat(initialMileage) * mileageMultiplier,
+      replacementThresholdMiles: parseFloat(maxMileage) * mileageMultiplier,
       notes: notes || undefined,
       isDefault,
     });

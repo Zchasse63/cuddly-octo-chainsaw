@@ -2,11 +2,11 @@
  * AI Program Generation Service
  *
  * Generates personalized training programs based on questionnaire responses.
- * Uses RAG (Upstash Search) for knowledge retrieval and Grok for generation.
+ * Uses RAG (Upstash Search) for knowledge retrieval and xAI for generation.
  * Saves programs to database and creates calendar entries.
  */
 
-import { generateCompletion, TEMPERATURES } from '../lib/grok';
+import { generateCompletion, TEMPERATURES } from '../lib/ai';
 import { search, cache } from '../lib/upstash';
 import { SEARCH_INDEXES } from './searchIndexer';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -28,6 +28,8 @@ export interface GeneratedProgram {
   primaryGoal: string;
   weeks: GeneratedWeek[];
   ragSources: string[];
+  /** Message explaining the weight prescription approach */
+  weightPrescriptionMessage?: string;
 }
 
 export interface GeneratedWeek {
@@ -66,9 +68,60 @@ export interface GeneratedExercise {
   repsTarget: string;
   rpeTarget?: number;
   percentageOf1rm?: number;
+  targetWeight?: number | null;
   restSeconds: number;
   notes?: string;
   supersetGroup?: number;
+}
+
+// User maxes from questionnaire for weight calculations
+interface UserMaxes {
+  benchPress?: number;
+  squat?: number;
+  deadlift?: number;
+}
+
+// Compound lift patterns for matching exercises to user maxes
+const COMPOUND_PATTERNS: Record<keyof UserMaxes, RegExp[]> = {
+  benchPress: [
+    /bench\s*press/i,
+    /flat\s*(barbell|dumbbell)?\s*bench/i,
+    /incline\s*(barbell)?\s*bench\s*press/i,
+    /decline\s*(barbell)?\s*bench\s*press/i,
+  ],
+  squat: [
+    /back\s*squat/i,
+    /barbell\s*(back)?\s*squat/i,
+    /front\s*squat/i,
+    /squat\s*(?!jump|thrust)/i,
+  ],
+  deadlift: [
+    /deadlift/i,
+    /sumo\s*deadlift/i,
+    /conventional\s*deadlift/i,
+    /romanian\s*deadlift/i,
+    /rdl/i,
+  ],
+};
+
+// Get user max for an exercise based on name pattern matching
+function getUserMaxForExercise(exerciseName: string, userMaxes: UserMaxes): { max: number; liftType: string } | null {
+  for (const [liftType, patterns] of Object.entries(COMPOUND_PATTERNS)) {
+    for (const pattern of patterns) {
+      if (pattern.test(exerciseName)) {
+        const max = userMaxes[liftType as keyof UserMaxes];
+        if (max) {
+          return { max, liftType };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// Calculate target weight from percentage of 1RM
+function calculateTargetWeight(percentageOf1rm: number, max: number): number {
+  return Math.round((percentageOf1rm / 100) * max / 5) * 5; // Round to nearest 5 lbs
 }
 
 // Legacy types for backward compatibility
@@ -169,7 +222,7 @@ async function getRAGContext(questionnaire: ProgramQuestionnaireData): Promise<R
     queries.map(async (q) => {
       try {
         const searchResults = await search.query({
-          index: SEARCH_INDEXES.KNOWLEDGE_BASE,
+          index: SEARCH_INDEXES.KNOWLEDGE,
           query: q.query,
           topK: 3,
           filter: q.category ? `category = "${q.category}"` : undefined,
@@ -226,11 +279,12 @@ OUTPUT FORMAT (JSON):
           "estimatedDuration": 60,
           "exercises": [
             {
-              "exerciseName": "Bench Press",
+              "exerciseName": "Barbell Bench Press",
               "exerciseOrder": 1,
               "sets": 4,
               "repsTarget": "8-10",
               "rpeTarget": 7,
+              "percentageOf1rm": 75,
               "restSeconds": 90,
               "notes": "Focus on control"
             }
@@ -244,13 +298,26 @@ OUTPUT FORMAT (JSON):
   ]
 }
 
+WEIGHT PRESCRIPTION (CRITICAL):
+- For PRIMARY COMPOUND LIFTS (Squat, Bench Press, Deadlift, Romanian Deadlift, Front Squat, Incline Bench Press):
+  * ALWAYS include "percentageOf1rm" field with the target percentage (e.g., 70, 75, 80, 85)
+  * Use appropriate percentages based on rep ranges: 8-10 reps = 70-75%, 5-6 reps = 80-85%, 3-4 reps = 85-90%
+  * During deload weeks, reduce percentages by 10-15%
+
+- For ACCESSORY/ISOLATION MOVEMENTS (bicep curls, tricep extensions, lat pulldowns, leg extensions, lateral raises, etc.):
+  * Use "rpeTarget" only (7-9 range typically)
+  * Do NOT include "percentageOf1rm" for these exercises
+  * We don't have baseline data for accessories yet
+
 RULES:
-1. Include progressive overload across weeks
+1. Include progressive overload across weeks (increase percentages for compounds by 2-5% each non-deload week)
 2. Include deload week every 4-5 weeks
 3. Account for injuries and equipment
-4. Be specific with exercise names
+4. Be specific with exercise names (e.g., "Barbell Back Squat" not just "Squat")
 5. For running, vary easy/hard days
 6. Include rest days
+7. CRITICAL: Return COMPLETE, valid JSON for ALL weeks. Do not truncate or cut off the response.
+8. CRITICAL: Include "percentageOf1rm" for ALL compound barbell movements (squat, bench, deadlift variations)
 
 Return ONLY valid JSON.`;
 
@@ -264,12 +331,24 @@ export async function generateFullProgram(
   // Build prompt
   const userPrompt = buildGenerationPrompt(questionnaire, ragContext);
 
-  // Generate
+  // Calculate token needs based on program size
+  // A 12-week program with 4-6 days/week and 5-8 exercises per day needs significant tokens
+  // Each week ~4000 tokens, 12 weeks = ~48,000 tokens minimum
+  const durationWeeks = questionnaire.programDuration || 12;
+  const daysPerWeek = questionnaire.daysPerWeek || 4;
+  const estimatedTokensPerWeek = daysPerWeek * 800; // ~800 tokens per day with exercises
+  const baseTokens = 2000; // For program metadata
+  const maxTokens = Math.max(64000, baseTokens + (estimatedTokensPerWeek * durationWeeks));
+
+  // Generate with complexity set to 'longform' for full program generation
+  // 'longform' uses grok-3-fast which can generate large JSON outputs (12-week programs)
+  // The reasoning model (grok-4-1-fast-reasoning) has limited output capacity
   const response = await generateCompletion({
     systemPrompt: FULL_PROGRAM_PROMPT,
     userPrompt,
     temperature: TEMPERATURES.coaching,
-    maxTokens: 8000,
+    maxTokens,
+    complexity: 'longform',
   });
 
   try {
@@ -279,6 +358,55 @@ export async function generateFullProgram(
       ...ragContext.trainingPrinciples,
       ...ragContext.programTemplates,
     ].slice(0, 5);
+
+    // Post-process: Calculate target weights for compound lifts
+    const userMaxes: UserMaxes = {
+      benchPress: questionnaire.currentBenchPress || undefined,
+      squat: questionnaire.currentSquat || undefined,
+      deadlift: questionnaire.currentDeadlift || undefined,
+    };
+
+    let hasCompoundWithWeights = false;
+    let hasAccessoryWithRPE = false;
+
+    for (const week of program.weeks) {
+      for (const day of week.days) {
+        if (day.exercises) {
+          for (const exercise of day.exercises) {
+            const matchedMax = getUserMaxForExercise(exercise.exerciseName, userMaxes);
+
+            if (matchedMax && exercise.percentageOf1rm) {
+              // Compound lift with user max - calculate target weight
+              exercise.targetWeight = calculateTargetWeight(exercise.percentageOf1rm, matchedMax.max);
+              hasCompoundWithWeights = true;
+            } else if (exercise.percentageOf1rm && !matchedMax) {
+              // Has percentage but no user max - use percentage only
+              exercise.targetWeight = null;
+            } else {
+              // Accessory - RPE only, no target weight
+              exercise.targetWeight = null;
+              if (exercise.rpeTarget) {
+                hasAccessoryWithRPE = true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Add user communication message
+    const hasAnyMaxes = userMaxes.benchPress || userMaxes.squat || userMaxes.deadlift;
+    if (hasAnyMaxes && hasCompoundWithWeights) {
+      program.weightPrescriptionMessage =
+        "For compound lifts (squat, bench press, deadlift), we've calculated specific weight targets based on your current maxes. " +
+        "For accessory exercises, we're using RPE (Rate of Perceived Exertion) since we don't have baseline data yet. " +
+        "As you log workouts, we'll build your exercise history and provide specific weight targets for these movements in future programs.";
+    } else if (hasAccessoryWithRPE) {
+      program.weightPrescriptionMessage =
+        "This program uses RPE (Rate of Perceived Exertion) to guide intensity. " +
+        "As you log workouts and we learn your strength levels, future programs will include specific weight targets.";
+    }
+
     return program;
   } catch (error) {
     console.error('Program generation parse error:', error);
@@ -306,11 +434,21 @@ function buildGenerationPrompt(
   if (questionnaire.trainingType !== 'running_only') {
     parts.push('\n=== STRENGTH DETAILS ===');
     parts.push(`Preferred Split: ${questionnaire.preferredSplit || 'No preference'}`);
+
+    // Include current maxes for compound lift weight calculations
+    parts.push('\n=== CURRENT 1RM MAXES (for %1RM calculations) ===');
     if (questionnaire.currentBenchPress) {
-      parts.push(`Current Bench: ${questionnaire.currentBenchPress} lbs`);
+      parts.push(`Bench Press 1RM: ${questionnaire.currentBenchPress} lbs`);
     }
     if (questionnaire.currentSquat) {
-      parts.push(`Current Squat: ${questionnaire.currentSquat} lbs`);
+      parts.push(`Squat 1RM: ${questionnaire.currentSquat} lbs`);
+    }
+    if (questionnaire.currentDeadlift) {
+      parts.push(`Deadlift 1RM: ${questionnaire.currentDeadlift} lbs`);
+    }
+
+    if (questionnaire.currentBenchPress || questionnaire.currentSquat || questionnaire.currentDeadlift) {
+      parts.push('(Use these maxes to set appropriate percentageOf1rm values for compound lifts)');
     }
   }
 

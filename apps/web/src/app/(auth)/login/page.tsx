@@ -16,7 +16,10 @@ export default function LoginPage() {
 
   const signIn = trpc.auth.signIn.useMutation({
     onSuccess: (data) => {
-      localStorage.setItem('token', data.token);
+      // Store the access token from the Supabase session
+      if (data.session?.access_token) {
+        localStorage.setItem('token', data.session.access_token);
+      }
       router.push('/dashboard');
     },
     onError: (err) => {

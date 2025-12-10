@@ -24,7 +24,7 @@ export const voiceCommands = pgTable('voice_commands', {
   // Parsing results
   parsedOutput: jsonb('parsed_output'), // { exercise, sets, reps, weight, rpe }
   confidence: real('confidence'), // 0-1 parsing confidence
-  modelUsed: text('model_used'), // 'grok-2', 'fine-tuned-v1'
+  modelUsed: text('model_used'), // 'grok-4-fast', 'fine-tuned-v1'
 
   // Search results from Upstash
   searchResults: jsonb('search_results'), // top matches from Upstash Search

@@ -20,7 +20,7 @@ export default function CompleteScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   // Save profile mutation
-  const saveProfileMutation = api.profile.updateProfile.useMutation();
+  const saveProfileMutation = api.auth.updateProfile.useMutation();
 
   useEffect(() => {
     // Trigger success haptic
@@ -53,7 +53,6 @@ export default function CompleteScreen() {
           preferredEquipment: data.equipment,
           injuries: data.limitations || undefined,
           notificationsEnabled: data.notificationsEnabled,
-          onboardingCompleted: true,
         });
       }
 

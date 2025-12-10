@@ -15,13 +15,13 @@ const server = createHTTPServer({
 });
 
 // Start server
-server.listen(PORT);
+const httpServer = server.listen(PORT);
 console.log(`🚀 tRPC Server running on http://localhost:${PORT}`);
 
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down...');
-  server.server.close(() => {
+  httpServer.close(() => {
     console.log('Server closed');
     process.exit(0);
   });

@@ -302,7 +302,7 @@ export const workoutRouter = router({
       ORDER BY date
     `);
 
-    return result.rows;
+    return result as unknown as Array<Record<string, unknown>>;
   }),
 
   // Get exercise history (sets for a specific exercise)

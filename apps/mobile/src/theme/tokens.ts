@@ -54,6 +54,18 @@ export const lightColors = {
     subtle: '#E9ECEF',
     light: '#E9ECEF',
     medium: '#6C757D',
+    default: '#DEE2E6',
+  },
+
+  // Status colors
+  status: {
+    success: '#34C759',
+    warning: '#FF9500',
+    error: '#FF3B30',
+    info: '#5AC8FA',
+    active: '#34C759',
+    inactive: '#ADB5BD',
+    pending: '#FF9500',
   },
 
   // Tints
@@ -133,6 +145,18 @@ export const darkColors = {
     subtle: '#2C2C2E',
     light: '#2C2C2E',
     medium: '#48484A',
+    default: '#3A3A3C',
+  },
+
+  // Status colors
+  status: {
+    success: '#30D158',
+    warning: '#FF9F0A',
+    error: '#FF453A',
+    info: '#64D2FF',
+    active: '#30D158',
+    inactive: '#48484A',
+    pending: '#FF9F0A',
   },
 
   // Tints
@@ -169,10 +193,12 @@ export const fontSize = {
   xl: 24,
   '2xl': 28,
   '3xl': 34,
+  '4xl': 40,
 };
 
 export const fontWeight = {
   regular: '400' as const,
+  normal: '400' as const,
   medium: '500' as const,
   semibold: '600' as const,
   bold: '700' as const,

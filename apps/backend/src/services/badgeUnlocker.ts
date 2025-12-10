@@ -196,7 +196,7 @@ export class BadgeUnlocker {
           target: criteria.value,
         };
 
-      case 'exercise_weight':
+      case 'exercise_weight': {
         const maxWeight = stats.exerciseMaxes[criteria.exercise || ''] || 0;
         return {
           badgeId: badge.id,
@@ -204,8 +204,9 @@ export class BadgeUnlocker {
           progress: maxWeight,
           target: criteria.weight,
         };
+      }
 
-      case 'powerlifting_total':
+      case 'powerlifting_total': {
         const total =
           (stats.exerciseMaxes['squat'] || 0) +
           (stats.exerciseMaxes['bench_press'] || 0) +
@@ -216,9 +217,10 @@ export class BadgeUnlocker {
           progress: total,
           target: criteria.value,
         };
+      }
 
       // Running badges
-      case 'total_distance_miles':
+      case 'total_distance_miles': {
         const totalMiles = stats.totalRunDistance / METERS_PER_MILE;
         return {
           badgeId: badge.id,
@@ -226,8 +228,9 @@ export class BadgeUnlocker {
           progress: Math.round(totalMiles * 10) / 10,
           target: criteria.value,
         };
+      }
 
-      case 'single_run_distance_miles':
+      case 'single_run_distance_miles': {
         if (!activity) return { badgeId: badge.id, earned: false };
         const activityMiles = (activity.distanceMeters || 0) / METERS_PER_MILE;
         return {
@@ -236,8 +239,9 @@ export class BadgeUnlocker {
           progress: Math.round(activityMiles * 10) / 10,
           target: criteria.value,
         };
+      }
 
-      case '5k_time':
+      case '5k_time': {
         const best5k = stats.runningPRs['5k'];
         return {
           badgeId: badge.id,
@@ -245,8 +249,9 @@ export class BadgeUnlocker {
           progress: best5k,
           target: criteria.value,
         };
+      }
 
-      case '10k_time':
+      case '10k_time': {
         const best10k = stats.runningPRs['10k'];
         return {
           badgeId: badge.id,
@@ -254,8 +259,9 @@ export class BadgeUnlocker {
           progress: best10k,
           target: criteria.value,
         };
+      }
 
-      case 'mile_time':
+      case 'mile_time': {
         const bestMile = stats.runningPRs['1mi'];
         return {
           badgeId: badge.id,
@@ -263,8 +269,9 @@ export class BadgeUnlocker {
           progress: bestMile,
           target: criteria.value,
         };
+      }
 
-      case 'single_run_elevation_ft':
+      case 'single_run_elevation_ft': {
         if (!activity) return { badgeId: badge.id, earned: false };
         const elevationFt = (activity.elevationGainMeters || 0) / METERS_PER_FOOT;
         return {
@@ -273,6 +280,7 @@ export class BadgeUnlocker {
           progress: Math.round(elevationFt),
           target: criteria.value,
         };
+      }
 
       // Streak badges
       case 'workout_streak':
@@ -306,7 +314,7 @@ export class BadgeUnlocker {
           earned: stats.hasHybridWeek,
         };
 
-      case 'hybrid_total':
+      case 'hybrid_total': {
         const hasWorkouts = stats.workoutCount >= (criteria.workouts || 0);
         const hasMiles =
           stats.totalRunDistance / METERS_PER_MILE >= (criteria.miles || 0);
@@ -314,6 +322,7 @@ export class BadgeUnlocker {
           badgeId: badge.id,
           earned: hasWorkouts && hasMiles,
         };
+      }
 
       case 'active_months':
         return {
@@ -447,7 +456,8 @@ export class BadgeUnlocker {
 
     // Map exercise names to keys
     const exerciseMaxes: Record<string, number> = {};
-    for (const row of exerciseMaxesResult.rows) {
+    const exerciseRows = Array.isArray(exerciseMaxesResult) ? exerciseMaxesResult : (exerciseMaxesResult?.rows || []);
+    for (const row of exerciseRows) {
       const name = row.exercise_name?.toLowerCase() || '';
       if (name.includes('bench')) {
         exerciseMaxes['bench_press'] = row.max_weight || 0;
@@ -466,20 +476,31 @@ export class BadgeUnlocker {
       }
     }
 
+    // Convert hybrid week booleans (database may return as strings, booleans, or 1/0)
+    const hybridRows = Array.isArray(hybridWeekResult) ? hybridWeekResult : (hybridWeekResult?.rows || []);
+    const hybridRow = hybridRows[0] || {};
+    const hasWorkout = Boolean(hybridRow.has_workout);
+    const hasRun = Boolean(hybridRow.has_run);
+
+    // Helper to get first row from result (handles both array and .rows format)
+    const getFirstRow = (result: any) => {
+      const rows = Array.isArray(result) ? result : (result?.rows || []);
+      return rows[0] || {};
+    };
+
     return {
-      workoutCount: parseInt(workoutCountResult.rows[0]?.count || '0'),
-      totalVolume: parseFloat(volumeResult.rows[0]?.volume || '0'),
-      prCount: parseInt(prCountResult.rows[0]?.count || '0'),
-      totalRunDistance: parseFloat(runStatsResult.rows[0]?.total_distance || '0'),
+      workoutCount: parseInt(getFirstRow(workoutCountResult)?.count || '0'),
+      totalVolume: parseFloat(getFirstRow(volumeResult)?.volume || '0'),
+      prCount: parseInt(getFirstRow(prCountResult)?.count || '0'),
+      totalRunDistance: parseFloat(getFirstRow(runStatsResult)?.total_distance || '0'),
       workoutStreak,
       runStreak,
       weeklyGoalStreak: 0, // Would need more complex calculation
       runningPRs: runningPRsMap,
       exerciseMaxes,
-      programsCompleted: parseInt(programsResult.rows[0]?.count || '0'),
+      programsCompleted: parseInt(getFirstRow(programsResult)?.count || '0'),
       activeMonths: 0, // Would need more complex calculation
-      hasHybridWeek:
-        hybridWeekResult.rows[0]?.has_workout && hybridWeekResult.rows[0]?.has_run,
+      hasHybridWeek: hasWorkout && hasRun,
     };
   }
 }

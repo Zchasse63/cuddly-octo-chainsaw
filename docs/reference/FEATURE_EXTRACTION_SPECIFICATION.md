@@ -92,9 +92,7 @@
 ### AI Services
 | Provider | Model | Purpose |
 |----------|-------|---------|
-| xAI | Grok 4 Fast | Coaching, programs, health analysis |
-| Moonshot | Kimi K2 Turbo | Voice parsing |
-| OpenAI | GPT-4o-mini | CSV import, synonyms (legacy) |
+| xAI | Grok 4 Fast | Coaching, voice parsing, programs, health analysis |
 
 ---
 
@@ -641,8 +639,7 @@
 | Service | Purpose | Auth Method |
 |---------|---------|-------------|
 | Supabase | Database, Auth, Storage | API Key + JWT |
-| xAI (Grok 4) | AI coaching, programs | API Key |
-| Moonshot (Kimi K2) | Voice parsing | API Key |
+| xAI (Grok 4) | AI coaching, voice parsing, programs | API Key |
 | Upstash Redis | Caching, sessions | REST Token |
 | Upstash Vector | RAG embeddings | REST Token |
 | WHOOP | Wearable data | OAuth 2.0 |

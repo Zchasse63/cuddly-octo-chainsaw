@@ -71,9 +71,7 @@ Use these exact technologies. Do not substitute without explicit approval:
 
 ### AI Services
 ```
-- Primary Model: Grok 4 (xAI) - coaching, programs, health analysis
-- Voice Parsing: Kimi K2 (Moonshot AI) - real-time voice commands
-- Utility Tasks: GPT-4o-mini (OpenAI) - CSV import, synonyms
+- Primary Model: Grok 4 (xAI) - coaching, voice parsing, programs, health analysis
 - RAG: Upstash Vector for knowledge retrieval
 ```
 
@@ -329,7 +327,7 @@ These tasks require human developers with access to actual devices and services:
 2. **Native modules** - Apple Watch, HealthKit, Google Fit require native development
 3. **API key configuration** - Store secrets securely in environment
 4. **Visual QA** - Screenshots needed to verify UI matches spec
-5. **Real API testing** - Actual Supabase, xAI, Moonshot API calls
+5. **Real API testing** - Actual Supabase and xAI API calls
 6. **App Store deployment** - Requires Apple/Google developer accounts
 7. **OAuth setup** - Apple/Google Sign-In requires console configuration
 
@@ -361,7 +359,7 @@ stack exactly as specified in the build instructions.
 If any of these are unclear, ask before proceeding:
 
 1. Supabase project URL and keys?
-2. AI API keys (xAI, Moonshot, OpenAI)?
+2. AI API keys (xAI/Grok)?
 3. Any features to prioritize or skip?
 4. Target MVP date?
 5. Team structure for handoff?

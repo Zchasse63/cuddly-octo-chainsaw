@@ -1,8 +1,8 @@
 import { sql, eq, and, gte, desc } from 'drizzle-orm';
-import { readinessCheckIns } from '../db/schema/readiness';
+import { readinessScores } from '../db/schema/readiness';
 import { workouts } from '../db/schema/workouts';
 import { runningActivities } from '../db/schema/running';
-import { generateGrokResponse } from '../lib/grok';
+import { generateCompletion, TEMPERATURES } from '../lib/ai';
 
 // Risk level
 type RiskLevel = 'low' | 'moderate' | 'high' | 'critical';
@@ -230,10 +230,12 @@ Training Data:
 Provide 3-4 specific, actionable recommendations to reduce injury risk. Be concise and practical.`;
 
     try {
-      const response = await generateGrokResponse(prompt, {
+      const response = await generateCompletion({
         systemPrompt:
           'You are a sports medicine expert providing injury prevention advice. Be specific, evidence-based, and actionable.',
+        userPrompt: prompt,
         maxTokens: 400,
+        temperature: TEMPERATURES.analysis,
       });
 
       return response;
@@ -248,6 +250,10 @@ Provide 3-4 specific, actionable recommendations to reduce injury risk. Be conci
     const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
+    // Convert to ISO strings for SQL compatibility
+    const oneWeekAgoStr = oneWeekAgo.toISOString();
+    const twoWeeksAgoStr = twoWeeksAgo.toISOString();
+
     const [currentWeekWorkouts, previousWeekWorkouts, readinessData, runData, consecutiveDays] =
       await Promise.all([
         // Current week workouts
@@ -256,7 +262,7 @@ Provide 3-4 specific, actionable recommendations to reduce injury risk. Be conci
           FROM workouts w
           LEFT JOIN workout_sets ws ON ws.workout_id = w.id
           WHERE w.user_id = ${this.userId}
-            AND w.created_at >= ${oneWeekAgo}
+            AND w.created_at >= ${oneWeekAgoStr}::timestamp
         `),
 
         // Previous week workouts
@@ -265,8 +271,8 @@ Provide 3-4 specific, actionable recommendations to reduce injury risk. Be conci
           FROM workouts w
           LEFT JOIN workout_sets ws ON ws.workout_id = w.id
           WHERE w.user_id = ${this.userId}
-            AND w.created_at >= ${twoWeeksAgo}
-            AND w.created_at < ${oneWeekAgo}
+            AND w.created_at >= ${twoWeeksAgoStr}::timestamp
+            AND w.created_at < ${oneWeekAgoStr}::timestamp
         `),
 
         // Recent readiness data
@@ -278,18 +284,18 @@ Provide 3-4 specific, actionable recommendations to reduce injury risk. Be conci
             AVG(soreness_level) as avg_soreness
           FROM readiness_check_ins
           WHERE user_id = ${this.userId}
-            AND created_at >= ${oneWeekAgo}
+            AND created_at >= ${oneWeekAgoStr}::timestamp
         `),
 
         // Run data
         this.db.execute(sql`
           SELECT
-            COALESCE(SUM(CASE WHEN started_at >= ${oneWeekAgo} THEN distance_meters ELSE 0 END), 0) as current_mileage,
-            COALESCE(SUM(CASE WHEN started_at >= ${twoWeeksAgo} AND started_at < ${oneWeekAgo} THEN distance_meters ELSE 0 END), 0) as previous_mileage,
-            COUNT(CASE WHEN started_at >= ${oneWeekAgo} THEN 1 END) as current_runs
+            COALESCE(SUM(CASE WHEN started_at >= ${oneWeekAgoStr}::timestamp THEN distance_meters ELSE 0 END), 0) as current_mileage,
+            COALESCE(SUM(CASE WHEN started_at >= ${twoWeeksAgoStr}::timestamp AND started_at < ${oneWeekAgoStr}::timestamp THEN distance_meters ELSE 0 END), 0) as previous_mileage,
+            COUNT(CASE WHEN started_at >= ${oneWeekAgoStr}::timestamp THEN 1 END) as current_runs
           FROM running_activities
           WHERE user_id = ${this.userId}
-            AND started_at >= ${twoWeeksAgo}
+            AND started_at >= ${twoWeeksAgoStr}::timestamp
         `),
 
         // Consecutive training days
@@ -298,12 +304,12 @@ Provide 3-4 specific, actionable recommendations to reduce injury risk. Be conci
             SELECT DISTINCT DATE(created_at) as day
             FROM workouts
             WHERE user_id = ${this.userId}
-              AND created_at >= ${twoWeeksAgo}
+              AND created_at >= ${twoWeeksAgoStr}::timestamp
             UNION
             SELECT DISTINCT DATE(started_at) as day
             FROM running_activities
             WHERE user_id = ${this.userId}
-              AND started_at >= ${twoWeeksAgo}
+              AND started_at >= ${twoWeeksAgoStr}::timestamp
           )
           SELECT COUNT(*) as consecutive_days
           FROM training_days

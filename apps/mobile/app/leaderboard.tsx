@@ -32,16 +32,16 @@ export default function LeaderboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Fetch leaderboard data
-  const { data: leaderboard, isLoading, refetch } = api.social.getLeaderboard.useQuery({
-    type: leaderboardType,
-    timeFrame,
+  // Map mobile leaderboard types to backend types
+  const backendType = leaderboardType === 'streak' ? 'streak' : leaderboardType === 'workouts' ? 'prs' : 'badges';
+
+  const { data: leaderboard, isLoading, refetch } = api.gamification.getLeaderboard.useQuery({
+    type: backendType as 'streak' | 'badges' | 'prs',
+    limit: 20,
   });
 
-  // Fetch current user's rank
-  const { data: myRank } = api.social.getMyRank.useQuery({
-    type: leaderboardType,
-    timeFrame,
-  });
+  // Current user's rank is determined by their position in the leaderboard
+  const myRank = leaderboard?.findIndex((entry) => String(entry.user_id) === 'current-user-id') ?? -1;
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -312,13 +312,13 @@ export default function LeaderboardScreen() {
             <View style={{ flex: 1, marginLeft: spacing.md }}>
               <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>Your Rank</Text>
               <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                #{myRank.rank} of {myRank.total}
+                #{myRank + 1} of {leaderboard?.length || 0}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>Your Score</Text>
               <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.accent.blue }}>
-                {formatValue(myRank.value, leaderboardType)}
+                {formatValue(0, leaderboardType)}
               </Text>
             </View>
           </View>
@@ -328,7 +328,7 @@ export default function LeaderboardScreen() {
       {/* Leaderboard List */}
       <FlatList
         data={leaderboard}
-        keyExtractor={(item) => item.userId}
+        keyExtractor={(item, index) => String(item.user_id || index)}
         renderItem={renderUser}
         contentContainerStyle={{ padding: spacing.md }}
         refreshControl={

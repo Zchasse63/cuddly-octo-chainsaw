@@ -28,8 +28,12 @@ export default function ProgramsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Fetch programs
-  const { data: programs, isLoading, refetch } = api.calendar.getPrograms.useQuery({
-    type: filter === 'all' ? undefined : filter,
+  const { data: allPrograms, isLoading, refetch } = api.calendar.listPrograms.useQuery();
+
+  // Filter programs based on selected filter
+  const programs = allPrograms?.filter((p) => {
+    if (filter === 'all') return true;
+    return p.programType === filter;
   });
 
   // Fetch active program

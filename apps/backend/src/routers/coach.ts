@@ -10,6 +10,8 @@ import {
 } from '../services/aiCoach';
 import { createRagCoach } from '../services/aiCoachRag';
 import { createUnifiedCoach, type UserContext, type CoachMessage } from '../services/unifiedCoach';
+import { createUnifiedCoachV2 } from '../services/unifiedCoachV2';
+import { shouldUseToolCalling } from '../lib/featureFlags';
 import {
   userProfiles,
   exercises,
@@ -40,13 +42,26 @@ export const coachRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const coach = createUnifiedCoach(ctx.db);
-
       // Build user context
       const context = await buildUserContext(ctx, input);
 
-      // Process message through unified coach
-      const response = await coach.processMessage(input.content, context);
+      // Use V2 (tool-based) if enabled, otherwise legacy
+      let response;
+      if (shouldUseToolCalling(ctx.user.id)) {
+        const coachV2 = await createUnifiedCoachV2(ctx.db);
+        // Cast context to V2 format (V2 uses a subset of V1 fields)
+        const v2Context = {
+          ...context,
+          conversationHistory: context.conversationHistory?.map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+        };
+        response = await coachV2.processMessage(input.content, v2Context);
+      } else {
+        const coach = createUnifiedCoach(ctx.db);
+        response = await coach.processMessage(input.content, context);
+      }
 
       // Save to conversation history if we have a conversation
       if (input.conversationId) {
@@ -92,15 +107,36 @@ export const coachRouter = router({
       })
     )
     .subscription(async function* ({ ctx, input }) {
-      const coach = createUnifiedCoach(ctx.db);
       const context = await buildUserContext(ctx, input);
 
-      for await (const result of coach.streamMessage(input.content, context)) {
-        if (result.chunk) {
-          yield { type: 'chunk' as const, data: result.chunk };
+      // Use V2 (tool-based) if enabled, otherwise legacy
+      if (shouldUseToolCalling(ctx.user.id)) {
+        const coachV2 = await createUnifiedCoachV2(ctx.db);
+        // Cast context to V2 format (V2 uses a subset of V1 fields)
+        const v2Context = {
+          ...context,
+          conversationHistory: context.conversationHistory?.map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+        };
+        for await (const result of coachV2.streamMessage(input.content, v2Context)) {
+          if (result.chunk) {
+            yield { type: 'chunk' as const, data: result.chunk };
+          }
+          if (result.final) {
+            yield { type: 'final' as const, data: result.final };
+          }
         }
-        if (result.final) {
-          yield { type: 'final' as const, data: result.final };
+      } else {
+        const coach = createUnifiedCoach(ctx.db);
+        for await (const result of coach.streamMessage(input.content, context)) {
+          if (result.chunk) {
+            yield { type: 'chunk' as const, data: result.chunk };
+          }
+          if (result.final) {
+            yield { type: 'final' as const, data: result.final };
+          }
         }
       }
     }),

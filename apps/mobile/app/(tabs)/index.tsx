@@ -38,15 +38,18 @@ export default function HomeScreen() {
     { enabled: !!user }
   );
 
-  const { data: todaysTraining, refetch: refetchTraining } = api.calendar.today.useQuery(
+  const { data: todaysTraining, refetch: refetchTraining } = api.calendar.getToday.useQuery(
     undefined,
     { enabled: !!user }
   );
 
-  const { data: stats, refetch: refetchStats } = api.gamification.getStats.useQuery(
+  const { data: streaksData, refetch: refetchStats } = api.gamification.getStreaks.useQuery(
     undefined,
     { enabled: !!user }
   );
+
+  // Extract workout streak from streaks array
+  const workoutStreak = streaksData?.find((s) => s.streakType === 'workout');
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -268,7 +271,7 @@ export default function HomeScreen() {
           {/* Readiness Score */}
           <Card style={{ flex: 1 }} variant="elevated">
             <View style={{ alignItems: 'center' }}>
-              <Flame size={24} color={readiness ? getReadinessColor(readiness.recoveryScore) : colors.text.disabled} />
+              <Flame size={24} color={readiness ? getReadinessColor(readiness.overallScore ?? 0) : colors.text.disabled} />
               <Text
                 style={{
                   fontSize: fontSize.xl,
@@ -277,7 +280,7 @@ export default function HomeScreen() {
                   marginTop: spacing.xs,
                 }}
               >
-                {readiness?.recoveryScore || '--'}
+                {readiness?.overallScore || '--'}
               </Text>
               <Text
                 style={{
@@ -302,7 +305,7 @@ export default function HomeScreen() {
                   marginTop: spacing.xs,
                 }}
               >
-                {stats?.currentStreak || 0}
+                {workoutStreak?.currentStreak || 0}
               </Text>
               <Text
                 style={{
@@ -327,7 +330,7 @@ export default function HomeScreen() {
                   marginTop: spacing.xs,
                 }}
               >
-                {stats?.weeklyWorkouts || workouts?.length || 0}
+                {workouts?.length || 0}
               </Text>
               <Text
                 style={{

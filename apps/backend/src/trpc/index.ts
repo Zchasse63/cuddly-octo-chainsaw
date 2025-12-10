@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { ZodError } from 'zod';
+import superjson from 'superjson';
 import { db } from '../db';
 import { getUserFromHeader } from '../lib/supabase';
 import type { User } from '@supabase/supabase-js';
@@ -33,8 +34,9 @@ export async function createContext(opts?: { req: Request }): Promise<Context> {
   };
 }
 
-// Initialize tRPC
+// Initialize tRPC with superjson transformer for proper Date/Map/Set serialization
 const t = initTRPC.context<Context>().create({
+  transformer: superjson,
   errorFormatter({ shape, error }) {
     return {
       ...shape,

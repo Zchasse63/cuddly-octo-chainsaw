@@ -1083,52 +1083,42 @@ export const useAuthStore = create<AuthState>()(
 
 ---
 
-## 7. AI Providers: Multiple vs Single
+## 7. AI Provider: Unified with Grok (xAI)
 
-### Current Implementation (3 Providers)
+### Current Implementation (Single Provider)
 
-```python
-# apps/backend/ uses multiple AI providers
+```typescript
+// apps/backend/src/lib/grok.ts
+import OpenAI from 'openai';
 
-# Grok 4 (xAI) - AI Coach, Program Generation
-# File: ai_coach_service.py, program_generation_service.py
-from openai import OpenAI
-xai_client = OpenAI(base_url="https://api.x.ai/v1", api_key=XAI_API_KEY)
-response = xai_client.chat.completions.create(
-    model="grok-4-fast-reasoning",
-    messages=[...]
-)
+// Grok (xAI) client using OpenAI SDK for chat interface
+const grok = new OpenAI({
+  apiKey: process.env.GROK_API_KEY!,
+  baseURL: 'https://api.x.ai/v1',
+});
 
-# Kimi K2 (Moonshot) - Voice Parsing
-# File: integrated_voice_parser.py
-kimi_client = OpenAI(base_url="https://api.moonshot.ai/v1", api_key=KIMI_API_KEY)
-response = kimi_client.chat.completions.create(
-    model="kimi-k2-turbo-preview",
-    messages=[...]
-)
+// All AI features: voice parsing, coaching, program generation
+response = await grok.chat.completions.create({
+    model: "grok-2-1212",
+    messages: [...]
+});
 
-# OpenAI - Embeddings (legacy)
-# File: exercise_matching_service.py
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-response = openai_client.embeddings.create(
-    model="text-embedding-3-small",
-    input=text
-)
+// Embeddings handled by Upstash Vector (no OpenAI needed)
 ```
 
-### The Problems
+### Benefits of Single Provider
 
-1. **Multiple API Keys**: 3 different keys to manage, rotate, monitor
+1. **Single API Key**: One key to manage, rotate, monitor
 
-2. **Different Response Formats**: Subtle differences in how each API returns data
+2. **Consistent Response Format**: Same structure everywhere
 
-3. **Different Error Handling**: Each provider has different error codes and retry logic
+3. **Unified Error Handling**: One pattern for all AI calls
 
-4. **Cost Tracking**: Harder to track total AI spend across providers
+4. **Easy Cost Tracking**: All AI spend in one place
 
-5. **Vendor Risk**: Each provider is a dependency that could change/fail
+5. **Reduced Vendor Risk**: Single dependency, simpler fallback
 
-### Proposed Implementation (Unified Provider)
+### Implementation
 
 ```typescript
 // packages/api/src/services/ai/index.ts
@@ -1180,43 +1170,17 @@ export const aiService = {
 };
 ```
 
-### Why It's Better
+### Completed Migration
 
-| Aspect | Multiple Providers | Single Provider |
-|--------|-------------------|-----------------|
-| API Keys | 3 | 1 |
-| Error Handling | 3 different patterns | 1 pattern |
-| Cost Tracking | Fragmented | Unified |
-| Switching Providers | Change everywhere | Change once |
-| Testing | Mock 3 APIs | Mock 1 API |
+All AI features now use Grok (xAI) via OpenAI SDK:
+- Voice parsing
+- AI coaching
+- Program generation
+- Health insights
 
-### Can You Implement Incrementally?
+Embeddings use Upstash Vector (no external embedding API needed).
 
-**Yes! Migrate one use case at a time.**
-
-```python
-# Step 1: Keep existing code, add feature flag
-USE_GROK_FOR_VOICE = os.getenv("USE_GROK_FOR_VOICE", "false") == "true"
-
-async def parse_voice(text: str):
-    if USE_GROK_FOR_VOICE:
-        return await grok_parse_voice(text)  # New implementation
-    else:
-        return await kimi_parse_voice(text)  # Existing implementation
-
-# Step 2: Test in production with flag off
-# Step 3: Enable flag, monitor quality
-# Step 4: Remove old code when confident
-```
-
-Migration order:
-1. Create unified AI service abstraction
-2. Migrate embeddings to Upstash (already using it)
-3. Test Grok for voice parsing (compare quality to Kimi)
-4. If quality matches, remove Kimi dependency
-5. Remove OpenAI dependency
-
-### Effort Level: 🟢 Low (1 week, incremental)
+### Effort Level: ✅ Complete
 
 ---
 

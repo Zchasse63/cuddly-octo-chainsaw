@@ -25,23 +25,23 @@ export default function ShoesScreen() {
   const [selectedShoeId, setSelectedShoeId] = useState<string | null>(null);
 
   // Fetch shoes
-  const { data: shoes, isLoading, refetch } = api.shoes.getShoes.useQuery();
+  const { data: shoes, isLoading, refetch } = api.shoes.getAll.useQuery();
 
   // Mutations
-  const setDefaultMutation = api.shoes.setDefaultShoe.useMutation({
+  const setDefaultMutation = api.shoes.update.useMutation({
     onSuccess: () => refetch(),
   });
 
-  const retireMutation = api.shoes.retireShoe.useMutation({
+  const retireMutation = api.shoes.retire.useMutation({
     onSuccess: () => refetch(),
   });
 
-  const deleteMutation = api.shoes.deleteShoe.useMutation({
+  const deleteMutation = api.shoes.delete.useMutation({
     onSuccess: () => refetch(),
   });
 
   const handleSetDefault = (shoeId: string) => {
-    setDefaultMutation.mutate({ id: shoeId });
+    setDefaultMutation.mutate({ id: shoeId, isDefault: true });
   };
 
   const handleRetire = (shoeId: string) => {

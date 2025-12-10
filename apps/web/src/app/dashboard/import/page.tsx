@@ -219,11 +219,9 @@ export default function ImportPage() {
               className="hidden"
               id="file-input"
             />
-            <label htmlFor="file-input">
-              <Button as="span" className="cursor-pointer">
-                <Upload className="w-4 h-4 mr-2" />
-                Choose File
-              </Button>
+            <label htmlFor="file-input" className="inline-flex items-center justify-center font-medium rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 bg-accent-blue text-white hover:bg-opacity-90 focus:ring-accent-blue px-4 py-2 text-base cursor-pointer">
+              <Upload className="w-4 h-4 mr-2" />
+              Choose File
             </label>
           </div>
 

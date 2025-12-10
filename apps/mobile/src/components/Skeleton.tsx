@@ -1,18 +1,18 @@
 import React, { useEffect } from 'react';
-import { View, ViewStyle } from 'react-native';
+import { View, ViewStyle, DimensionValue } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
   withTiming,
-  interpolate,
+  interpolateColor,
 } from 'react-native-reanimated';
 import { useTheme } from '../theme/ThemeContext';
 import { borderRadius, spacing } from '../theme/tokens';
 
 interface SkeletonProps {
-  width?: number | string;
-  height?: number;
+  width?: DimensionValue;
+  height?: DimensionValue;
   borderRadius?: number;
   style?: ViewStyle;
 }
@@ -35,7 +35,7 @@ export function Skeleton({
   }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolate(
+    backgroundColor: interpolateColor(
       shimmer.value,
       [0, 0.5, 1],
       [colors.background.tertiary, colors.background.secondary, colors.background.tertiary]
