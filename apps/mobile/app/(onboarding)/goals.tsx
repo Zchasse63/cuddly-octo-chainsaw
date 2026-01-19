@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Target, Flame, Dumbbell, Heart, Activity, Award, Check } from 'lucide-react-native';
+import { Target, Flame, Dumbbell, Heart, Activity, Award, Check, ChevronLeft } from 'lucide-react-native';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Button } from '../../src/components/ui';
 import { useOnboardingStore, FitnessGoal, goalLabels } from '../../src/stores/onboarding';
@@ -19,7 +19,7 @@ const goalIcons: Record<FitnessGoal, any> = {
 export default function GoalsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { data, setGoals, nextStep, currentStep, totalSteps } = useOnboardingStore();
+  const { data, setGoals, nextStep, prevStep, currentStep, totalSteps } = useOnboardingStore();
 
   const handleToggleGoal = (goal: FitnessGoal) => {
     const newGoals = data.goals.includes(goal)
@@ -28,14 +28,40 @@ export default function GoalsScreen() {
     setGoals(newGoals);
   };
 
+  const handleBack = () => {
+    prevStep();
+    router.back();
+  };
+
   const handleNext = () => {
     nextStep();
-    router.push('/(onboarding)/experience');
+    router.push('/(onboarding)/activities');
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <View style={{ flex: 1, padding: spacing.lg }}>
+        {/* Back button */}
+        <TouchableOpacity
+          onPress={handleBack}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: spacing.md,
+          }}
+        >
+          <ChevronLeft size={24} color={colors.icon.primary} />
+          <Text
+            style={{
+              fontSize: fontSize.base,
+              color: colors.text.primary,
+              marginLeft: spacing.xs,
+            }}
+          >
+            Back
+          </Text>
+        </TouchableOpacity>
+
         {/* Progress indicator */}
         <View style={{ flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.xl }}>
           {Array.from({ length: totalSteps }).map((_, index) => (

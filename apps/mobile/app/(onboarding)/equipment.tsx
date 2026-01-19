@@ -30,7 +30,7 @@ export default function EquipmentScreen() {
 
   const handleNext = () => {
     nextStep();
-    router.push('/(onboarding)/limitations');
+    router.push('/(onboarding)/experience');
   };
 
   const handleBack = () => {
@@ -156,7 +156,6 @@ export default function EquipmentScreen() {
         <View style={{ marginTop: spacing.lg }}>
           <Button
             onPress={handleNext}
-            disabled={data.equipment.length === 0}
             fullWidth
           >
             Continue

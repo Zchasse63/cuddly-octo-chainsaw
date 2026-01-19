@@ -5,7 +5,7 @@
  * Uses Vercel AI SDK with xAI's Grok model and tool calling.
  */
 
-import { generateText, streamText, AI_CONFIG } from '../lib/ai';
+import { generateText, streamText, AI_CONFIG, stepCountIs } from '../lib/ai';
 import { collectTools } from '../tools/registry';
 import { createToolContext } from '../tools/context';
 import { getAllAthleteTools } from '../tools/athlete';
@@ -60,27 +60,43 @@ export interface StreamChunk {
 
 const COACH_SYSTEM_PROMPT = `You are VoiceFit's AI fitness coach - knowledgeable, supportive, and conversational.
 
-IMPORTANT: You have access to tools that let you query the user's data. ALWAYS use tools to get current information before answering questions about:
-- Today's workout or schedule (use getTodaysWorkout)
-- Recent training history (use getRecentWorkouts, getExerciseHistory)
-- Personal records (use getPersonalRecords)
-- Health and recovery (use getReadinessScore, getHealthMetrics)
-- Program progress (use getActiveProgram, getProgramProgress)
-- Injuries (use getActiveInjuries, getExercisesToAvoid)
-- Exercise form and tips (use getExerciseFormTips, searchKnowledgeBase)
+🚨 CRITICAL RESPONSE REQUIREMENTS 🚨
+1. You MUST ALWAYS generate a text response - NEVER return empty text
+2. After calling tools, you MUST synthesize the results into natural language
+3. If tools return data, you MUST reference that data in your response
+4. Even if tools fail or return empty results, you MUST still generate helpful text
 
-PERSONALITY:
-- Use contractions naturally (you're, let's, we'll)
+REQUIRED WORKFLOW FOR DATA QUERIES:
+Step 1: Call the appropriate tool(s) to get current data
+Step 2: Wait for tool results
+Step 3: MANDATORY: Generate a natural language response that incorporates the tool results
+   - If data found: Explain what the data shows in 2-4 conversational sentences
+   - If no data found: Acknowledge this and suggest next steps
+   - If tool error: Explain you couldn't retrieve data and offer alternatives
+
+TOOL USAGE GUIDE - When the user asks about these topics, CALL THESE TOOLS FIRST:
+- Profile/goals/experience → getUserProfile
+- Today's workout/schedule → getTodaysWorkout
+- Recent workouts/history → getRecentWorkouts
+- Personal records/PRs → getPersonalRecords
+- Health/recovery/readiness → getReadinessScore, getHealthMetrics
+- Program progress → getActiveProgram, getProgramProgress
+- Injuries/pain → getActiveInjuries, getExercisesToAvoid
+- Exercise form/technique → getExerciseFormTips, searchKnowledgeBase
+- Find exercises → searchExercises
+
+PERSONALITY & STYLE:
+- Use contractions (you're, let's, we'll)
 - Celebrate progress, be constructive on setbacks
-- Reference specific data from tool results
+- Reference specific numbers/data from tool results
 - Ask follow-up questions when helpful
 - Use their name occasionally
+- Keep responses concise (2-4 sentences) unless detail requested
 
 CONSTRAINTS:
-- Keep responses concise (2-4 sentences unless detail requested)
-- For medical concerns, recommend consulting a professional
-- If a tool returns an error, acknowledge it gracefully
-- Never make up data - always use tools to get real information`;
+- Medical concerns → recommend consulting a professional
+- Tool errors → acknowledge gracefully and offer alternatives
+- Never fabricate data - always use tools for facts`;
 
 // ============================================
 // UNIFIED COACH SERVICE V2
@@ -122,15 +138,67 @@ export async function createUnifiedCoachV2(db: Database): Promise<UnifiedCoachV2
       const messages = buildMessages(message, userContext);
 
       // Use Vercel AI SDK with tool calling
+      // Determine if this query requires tool calling
+      const needsTools = requiresToolCall(message);
+
       const result = await generateText({
         model: AI_CONFIG.responses,
         tools,
         system: COACH_SYSTEM_PROMPT,
         messages,
+        stopWhen: stepCountIs(5), // Allow multi-turn tool execution
+        temperature: 0.1, // Lower temperature for more deterministic tool selection
+        ...(needsTools ? { toolChoice: 'required' } : {}),
       });
 
+      // Check for 0 tool calls when tools are expected
+      const toolCallCount = result.toolCalls?.length || 0;
+      if (toolCallCount === 0 && requiresToolCall(message)) {
+        // Log 0-tool-call event for monitoring
+        if (process.env.NODE_ENV !== 'test') {
+          console.warn('[AI] 0 tool calls detected for query that likely requires data:', {
+            message: message.substring(0, 100),
+            userId: userContext.userId,
+          });
+        }
+
+        // Return helpful fallback message
+        return {
+          message: "I couldn't retrieve your data right now. Please try rephrasing your question or be more specific about what you'd like to know.",
+          intent: 'general_fitness',
+          toolsUsed: [],
+        };
+      }
+
+      // CRITICAL VALIDATION: Ensure non-empty message
+      // If AI called tools but didn't generate text (Grok bug), synthesize from tool results
+      let finalMessage = result.text;
+      if (!finalMessage || finalMessage.trim() === '') {
+        if (toolCallCount > 0) {
+          // AI called tools but failed to generate text - synthesize response from tool results
+          if (process.env.NODE_ENV !== 'test') {
+            console.warn('[AI] Empty text after tool calls - synthesizing from tool results', {
+              userId: userContext.userId,
+              toolsUsed: result.toolCalls?.map(tc => tc.toolName),
+            });
+          }
+
+          // Extract tool results and synthesize a natural response
+          const toolResults = result.toolResults || [];
+          const mappedToolCalls = (result.toolCalls || []).map(tc => ({
+            toolName: tc.toolName,
+            args: 'args' in tc ? tc.args : undefined
+          }));
+          const synthesized = synthesizeResponseFromTools(mappedToolCalls, toolResults, message);
+          finalMessage = synthesized || "I retrieved your information but couldn't generate a response. Please try rephrasing your question.";
+        } else {
+          // No tools called and no text - generic fallback
+          finalMessage = "I'm having trouble generating a response right now. Please try rephrasing your question.";
+        }
+      }
+
       return {
-        message: result.text,
+        message: finalMessage,
         intent: extractIntent(result),
         toolsUsed: result.toolCalls?.map(tc => tc.toolName) || [],
       };
@@ -162,11 +230,17 @@ export async function createUnifiedCoachV2(db: Database): Promise<UnifiedCoachV2
       const messages = buildMessages(message, userContext);
 
       // Stream with tool calling
+      // Determine if this query requires tool calling
+      const needsTools = requiresToolCall(message);
+
       const result = streamText({
         model: AI_CONFIG.responses,
         tools,
         system: COACH_SYSTEM_PROMPT,
         messages,
+        stopWhen: stepCountIs(5), // Allow multi-turn tool execution
+        temperature: 0.1, // Lower temperature for more deterministic tool selection
+        ...(needsTools ? { toolChoice: 'required' } : {}),
       });
 
       // Yield text chunks
@@ -178,9 +252,54 @@ export async function createUnifiedCoachV2(db: Database): Promise<UnifiedCoachV2
       const finalText = await result.text;
       const toolCalls = await result.toolCalls;
 
+      // Check for 0 tool calls when tools are expected
+      const toolCallCount = toolCalls?.length || 0;
+      if (toolCallCount === 0 && requiresToolCall(message)) {
+        // Log 0-tool-call event for monitoring
+        if (process.env.NODE_ENV !== 'test') {
+          console.warn('[AI Stream] 0 tool calls detected for query that likely requires data:', {
+            message: message.substring(0, 100),
+            userId: userContext.userId,
+          });
+        }
+
+        yield {
+          final: {
+            message: "I couldn't retrieve your data right now. Please try rephrasing your question or be more specific about what you'd like to know.",
+            intent: 'general_fitness',
+            toolsUsed: [],
+          },
+        };
+        return;
+      }
+
+      // CRITICAL VALIDATION: Ensure non-empty message for streaming too
+      let finalMessage = finalText;
+      if (!finalMessage || finalMessage.trim() === '') {
+        if (toolCallCount > 0) {
+          if (process.env.NODE_ENV !== 'test') {
+            console.warn('[AI Stream] Empty text after tool calls - synthesizing from tool results', {
+              userId: userContext.userId,
+              toolsUsed: toolCalls?.map(tc => tc.toolName),
+            });
+          }
+
+          // Extract tool results and synthesize a natural response
+          const toolResults = await result.toolResults;
+          const mappedToolCalls = (toolCalls || []).map(tc => ({
+            toolName: tc.toolName,
+            args: 'args' in tc ? tc.args : undefined
+          }));
+          const synthesized = synthesizeResponseFromTools(mappedToolCalls, toolResults || [], message);
+          finalMessage = synthesized || "I retrieved your information but couldn't generate a response. Please try rephrasing your question.";
+        } else {
+          finalMessage = "I'm having trouble generating a response right now. Please try rephrasing your question.";
+        }
+      }
+
       yield {
         final: {
-          message: finalText,
+          message: finalMessage,
           toolsUsed: toolCalls?.map(tc => tc.toolName) || [],
         },
       };
@@ -191,6 +310,120 @@ export async function createUnifiedCoachV2(db: Database): Promise<UnifiedCoachV2
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
+
+/**
+ * Determine if a message likely requires tool calls to answer properly.
+ * Helps detect when AI returns 0 tool calls for data-requiring queries.
+ */
+function requiresToolCall(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+
+  // Keywords that indicate data retrieval is needed
+  const dataKeywords = [
+    'my profile', 'my goal', 'my tier', 'my experience',
+    'today', 'this week', 'recent', 'latest', 'current',
+    'workout', 'exercise', 'training', 'program',
+    'personal record', 'pr', 'max',
+    'injury', 'injuries', 'hurt', 'pain',
+    'streak', 'badge', 'achievement',
+    'progress', 'history', 'stats',
+    'how much', 'how many', 'show me', 'what is my',
+  ];
+
+  return dataKeywords.some(keyword => lowerMessage.includes(keyword));
+}
+
+/**
+ * Synthesize a natural language response from tool calls and their results.
+ * Fallback for when Grok AI calls tools but fails to generate final text.
+ *
+ * @param toolCalls - Array of tool calls made by the AI
+ * @param toolResults - Array of tool results returned
+ * @param originalMessage - The user's original question
+ * @returns A synthesized natural language response based on the tool data
+ */
+function synthesizeResponseFromTools(
+  toolCalls: Array<{ toolName: string; args: unknown }>,
+  toolResults: Array<{ output: unknown; toolName?: string }>,
+  originalMessage: string
+): string {
+  if (!toolCalls || toolCalls.length === 0 || !toolResults || toolResults.length === 0) {
+    return '';
+  }
+
+  // Get the primary tool used
+  const primaryTool = toolCalls[0];
+  // Tool results structure: { type: "tool-result", toolName: string, output: { success: boolean, data: T } }
+  const primaryResultOutput = toolResults[0]?.output as any;
+
+  if (!primaryResultOutput) {
+    return '';
+  }
+
+  // Check if tool returned error
+  if (primaryResultOutput.success === false) {
+    const errorMsg = primaryResultOutput.error?.message || 'Unknown error';
+    return `I tried to retrieve that information but encountered an issue: ${errorMsg}. Please try again or rephrase your question.`;
+  }
+
+  // If tool returned success with data, synthesize based on tool type
+  if (primaryResultOutput.success === true && primaryResultOutput.data) {
+    const data = primaryResultOutput.data;
+
+    // getUserProfile - synthesize profile information
+    if (primaryTool.toolName === 'getUserProfile') {
+      const parts = [];
+      if (data.experienceLevel) {
+        parts.push(`You're ${data.experienceLevel === 'beginner' ? 'a beginner' : data.experienceLevel === 'intermediate' ? 'an intermediate' : 'an advanced'} athlete`);
+      }
+      if (data.goals && data.goals.length > 0) {
+        parts.push(`focused on ${data.goals.join(', ')}`);
+      }
+      if (data.tier) {
+        parts.push(`currently on the ${data.tier} tier`);
+      }
+
+      return parts.length > 0
+        ? parts.join(', ') + '.'
+        : 'I found your profile information.';
+    }
+
+    // getRecentWorkouts - synthesize workout history
+    if (primaryTool.toolName === 'getRecentWorkouts') {
+      const workouts = data.workouts || data;
+      if (Array.isArray(workouts)) {
+        if (workouts.length === 0) {
+          return "You haven't logged any workouts recently.";
+        }
+        return `You've completed ${workouts.length} workout${workouts.length > 1 ? 's' : ''} recently.`;
+      }
+    }
+
+    // getActiveInjuries - synthesize injury information
+    if (primaryTool.toolName === 'getActiveInjuries') {
+      if (data.activeInjuries) {
+        return `You currently have an injury: ${data.activeInjuries}.`;
+      }
+      return "You don't have any active injuries logged.";
+    }
+
+    // getTodaysWorkout - synthesize today's workout
+    if (primaryTool.toolName === 'getTodaysWorkout') {
+      if (data.workout) {
+        const workout = data.workout;
+        return `Today's workout is ${workout.name || 'a training session'}.`;
+      }
+      return "You don't have a workout scheduled for today.";
+    }
+
+    // Generic fallback for successful tool calls with data
+    const toolName = primaryTool.toolName;
+    return `I retrieved your ${toolName.replace(/^get/, '').replace(/([A-Z])/g, ' $1').toLowerCase().trim()} information.`;
+  }
+
+  // Ultimate fallback
+  return `I used ${primaryTool.toolName} but couldn't generate a complete response. Please try asking again.`;
+}
 
 function buildMessages(
   message: string,

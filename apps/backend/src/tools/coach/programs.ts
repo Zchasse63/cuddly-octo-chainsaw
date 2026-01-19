@@ -15,7 +15,7 @@ import { isCoachOfClient, getCoachClients } from './helpers';
 // Tool 45: Get Program Templates
 export const getProgramTemplates = createTool({
   name: 'getProgramTemplates',
-  description: 'Get available program templates for assignment',
+  description: 'Get available program templates for assignment. Use this when the coach asks "show my templates", "what programs can I assign", "list available training programs", or when creating programs for clients.',
   parameters: z.object({
     programType: z.enum(['strength', 'running', 'hybrid', 'crossfit', 'custom', 'all']).default('all'),
     limit: z.number().min(1).max(50).default(20),
@@ -52,7 +52,7 @@ export const getProgramTemplates = createTool({
 // Tool 46: Assign Program to Client
 export const assignProgramToClient = createTool({
   name: 'assignProgramToClient',
-  description: 'Assign a program template to a client',
+  description: 'Assign a program template to a client. Use this when the coach asks "assign [program] to [client]", "give [client] the [program] program", "start [client] on a program", or when onboarding new clients with training plans.',
   parameters: z.object({
     clientId: z.string().uuid().describe('Client user ID'),
     templateId: z.string().uuid().describe('Program template ID'),

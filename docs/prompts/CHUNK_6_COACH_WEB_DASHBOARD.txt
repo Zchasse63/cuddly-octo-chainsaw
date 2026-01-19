@@ -1,0 +1,396 @@
+Complete CHUNK 6: Coach Web Dashboard for VoiceFit 2.0.
+
+Reference the full audit at docs/audits/FULL_PROJECT_AUDIT.md for context.
+Reference docs/UI_SPECIFICATION.md for styling guidelines.
+
+This chunk converts the Next.js coach web dashboard from mock data to real tRPC data.
+
+## PROJECT STRUCTURE
+
+Web app: apps/web/
+- Next.js 14 App Router at apps/web/src/app/
+- Dashboard pages at apps/web/src/app/dashboard/
+- Auth pages at apps/web/src/app/(auth)/
+- UI components at apps/web/src/components/ui/
+- tRPC client at apps/web/src/lib/trpc.ts
+
+Backend routers: apps/backend/src/routers/
+- coach.ts - existing coach chat endpoints
+- analytics.ts - user analytics endpoints
+- All routers exported from apps/backend/src/routers/index.ts
+
+Coach AI tools (reference for data structure): apps/backend/src/tools/coach/
+- clients.ts - getClientList, getClientProfile, getClientWorkouts, etc.
+- programs.ts - getProgramTemplates, assignProgramToClient, etc.
+- messaging.ts - getClientConversations, sendMessageToClient, etc.
+- analytics.ts - getClientAnalyticsSummary, getAtRiskClients
+
+## TASK 6.1: Create Coach Dashboard tRPC Router
+
+The AI tools at apps/backend/src/tools/coach/ contain the data access logic. Create a new tRPC router that exposes this functionality to the web dashboard.
+
+Create apps/backend/src/routers/coachDashboard.ts:
+```typescript
+import { z } from 'zod';
+import { router, protectedProcedure } from '../trpc';
+import { eq, desc, and, sql, gte } from 'drizzle-orm';
+import {
+  userProfiles, workouts, trainingPrograms, readinessScores,
+  conversations, messages, coachNotes, coachClientRelationships
+} from '../db/schema';
+
+export const coachDashboardRouter = router({
+  // Dashboard summary - stats shown on main dashboard
+  getDashboardSummary: protectedProcedure.query(async ({ ctx }) => {
+    // Verify user is a coach
+    const profile = await ctx.db.query.userProfiles.findFirst({
+      where: eq(userProfiles.userId, ctx.user.id),
+    });
+    if (profile?.tier !== 'coach') {
+      throw new Error('Unauthorized: Coach access required');
+    }
+
+    // Get client count, recent activity, revenue (mock for now)
+    const clientCount = await ctx.db.select({ count: sql`count(*)` })
+      .from(coachClientRelationships)
+      .where(eq(coachClientRelationships.coachId, ctx.user.id));
+
+    // Return dashboard summary data
+    return {
+      activeClients: clientCount[0]?.count || 0,
+      workoutsThisWeek: 0, // Calculate from workouts table
+      monthlyRevenue: 0, // Placeholder
+      avgSessionTime: 0, // Calculate from workouts
+      recentActivity: [], // Recent client activity
+      upcomingSessions: [], // Scheduled sessions
+    };
+  }),
+
+  // Get all clients for the coach
+  getClientList: protectedProcedure
+    .input(z.object({
+      status: z.enum(['all', 'active', 'paused']).default('all'),
+      search: z.string().optional(),
+      limit: z.number().default(20),
+      offset: z.number().default(0),
+    }))
+    .query(async ({ ctx, input }) => {
+      // Implementation: query coachClientRelationships joined with userProfiles
+    }),
+
+  // Get single client detail
+  getClientDetail: protectedProcedure
+    .input(z.object({ clientId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      // Implementation: get full client profile, workouts, program, health data
+    }),
+
+  // Invite a new client
+  inviteClient: protectedProcedure
+    .input(z.object({
+      email: z.string().email(),
+      name: z.string(),
+      message: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Implementation: create invitation record, send email
+    }),
+
+  // Get program templates
+  getProgramTemplates: protectedProcedure.query(async ({ ctx }) => {
+    // Implementation: get coach's program templates
+  }),
+
+  // Create new program template
+  createProgramTemplate: protectedProcedure
+    .input(z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      durationWeeks: z.number(),
+      workoutsPerWeek: z.number(),
+      workouts: z.array(z.object({
+        dayOfWeek: z.number(),
+        name: z.string(),
+        exercises: z.array(z.object({
+          exerciseId: z.string().uuid(),
+          sets: z.number(),
+          reps: z.string(),
+          restSeconds: z.number().optional(),
+        })),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Implementation: create program template
+    }),
+
+  // Analytics summary for coach
+  getAnalyticsSummary: protectedProcedure.query(async ({ ctx }) => {
+    // Implementation: aggregate client progress, adherence rates, at-risk clients
+  }),
+
+  // Get client conversations (for messages page)
+  getConversations: protectedProcedure
+    .input(z.object({
+      limit: z.number().default(20),
+    }))
+    .query(async ({ ctx, input }) => {
+      // Implementation: get recent conversations with clients
+    }),
+
+  // Send message to client
+  sendMessage: protectedProcedure
+    .input(z.object({
+      clientId: z.string().uuid(),
+      content: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Implementation: create message, notify client
+    }),
+
+  // Update coach profile
+  updateProfile: protectedProcedure
+    .input(z.object({
+      name: z.string().optional(),
+      bio: z.string().optional(),
+      specialties: z.array(z.string()).optional(),
+      hourlyRate: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Implementation: update coach profile
+    }),
+
+  // CSV Import for bulk client data
+  importClients: protectedProcedure
+    .input(z.object({
+      csvData: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Implementation: parse CSV, create client records
+    }),
+});
+```
+
+Export the router in apps/backend/src/routers/index.ts:
+```typescript
+import { coachDashboardRouter } from './coachDashboard';
+
+export const appRouter = router({
+  // ... existing routers
+  coachDashboard: coachDashboardRouter,
+});
+```
+
+## TASK 6.2: Set Up Web tRPC Provider
+
+Update apps/web/src/app/layout.tsx to wrap with tRPC provider.
+
+Create apps/web/src/app/providers.tsx:
+```typescript
+'use client';
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { httpBatchLink } from '@trpc/client';
+import { useState } from 'react';
+import { trpc } from '../lib/trpc';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  const [trpcClient] = useState(() =>
+    trpc.createClient({
+      links: [
+        httpBatchLink({
+          url: process.env.NEXT_PUBLIC_API_URL + '/trpc',
+          headers: async () => {
+            // Get auth token from Supabase
+            const token = await getAuthToken();
+            return {
+              authorization: token ? `Bearer ${token}` : '',
+            };
+          },
+        }),
+      ],
+    })
+  );
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+}
+```
+
+## TASK 6.3: Convert Dashboard Pages to Real Data
+
+Replace ALL mock data in dashboard pages with tRPC queries.
+
+### apps/web/src/app/dashboard/page.tsx
+Replace mock `stats` and `recentActivity` arrays with:
+```typescript
+const { data: summary, isLoading } = trpc.coachDashboard.getDashboardSummary.useQuery();
+```
+
+### apps/web/src/app/dashboard/clients/page.tsx
+Replace mock `mockClients` with:
+```typescript
+const { data: clients, isLoading } = trpc.coachDashboard.getClientList.useQuery({
+  status: filterStatus,
+  search: searchQuery,
+});
+```
+
+### apps/web/src/app/dashboard/clients/[id]/page.tsx
+Replace mock client data with:
+```typescript
+const { id } = useParams();
+const { data: client, isLoading } = trpc.coachDashboard.getClientDetail.useQuery({ clientId: id });
+```
+
+### apps/web/src/app/dashboard/clients/new/page.tsx
+Connect form to:
+```typescript
+const inviteMutation = trpc.coachDashboard.inviteClient.useMutation();
+```
+
+### apps/web/src/app/dashboard/analytics/page.tsx
+Replace mock data with:
+```typescript
+const { data: analytics } = trpc.coachDashboard.getAnalyticsSummary.useQuery();
+```
+
+### apps/web/src/app/dashboard/import/page.tsx
+Connect CSV upload to:
+```typescript
+const importMutation = trpc.coachDashboard.importClients.useMutation();
+```
+
+### apps/web/src/app/dashboard/programs/page.tsx
+Replace mock programs with:
+```typescript
+const { data: programs } = trpc.coachDashboard.getProgramTemplates.useQuery();
+```
+
+### apps/web/src/app/dashboard/programs/new/page.tsx
+Connect program builder to:
+```typescript
+const createMutation = trpc.coachDashboard.createProgramTemplate.useMutation();
+```
+
+### apps/web/src/app/dashboard/messages/page.tsx
+Replace mock conversations with:
+```typescript
+const { data: conversations } = trpc.coachDashboard.getConversations.useQuery({});
+const sendMutation = trpc.coachDashboard.sendMessage.useMutation();
+```
+
+### apps/web/src/app/dashboard/settings/page.tsx
+Connect profile form to:
+```typescript
+const updateMutation = trpc.coachDashboard.updateProfile.useMutation();
+```
+
+## TASK 6.4: Complete Authentication Pages
+
+### apps/web/src/app/(auth)/login/page.tsx
+- Connect to Supabase Auth
+- Handle form validation
+- Redirect to dashboard on success
+- Show error messages
+
+### apps/web/src/app/(auth)/signup/page.tsx
+- Connect to Supabase Auth signUp
+- Add terms checkbox (required)
+- Redirect to onboarding on success
+
+Create apps/web/src/lib/supabase.ts:
+```typescript
+import { createBrowserClient } from '@supabase/ssr';
+
+export const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+export async function getAuthToken() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token;
+}
+```
+
+## TASK 6.5: Complete Onboarding Page
+
+apps/web/src/app/onboarding/page.tsx should be a multi-step form for coach onboarding:
+1. Name and bio
+2. Specialties (multi-select)
+3. Pricing (hourly rate)
+4. Profile photo upload
+
+Save data using tRPC mutation and redirect to dashboard.
+
+## TASK 6.6: Add Loading States and Error Handling
+
+Every page should:
+1. Show skeleton/spinner during loading
+2. Handle errors gracefully with user-friendly messages
+3. Show empty states when no data
+
+Example pattern:
+```typescript
+const { data, isLoading, error } = trpc.coachDashboard.getClientList.useQuery({});
+
+if (isLoading) return <LoadingSkeleton />;
+if (error) return <ErrorMessage error={error} />;
+if (!data?.length) return <EmptyState message="No clients yet" />;
+
+return <ClientList clients={data} />;
+```
+
+## TASK 6.7: Update Tailwind Colors
+
+In apps/web/tailwind.config.js, ensure colors match UI_SPECIFICATION.md:
+```javascript
+colors: {
+  background: {
+    primary: '#FFFFFF',
+    secondary: '#F8F9FA',
+    tertiary: '#E9ECEF',
+  },
+  text: {
+    primary: '#000000',
+    secondary: '#495057',
+    tertiary: '#6C757D',
+  },
+  accent: {
+    blue: '#007AFF',
+    green: '#34C759',
+    orange: '#FF9500',
+    red: '#FF3B30',
+    purple: '#AF52DE',
+  },
+  // ... rest from UI_SPECIFICATION.md
+}
+```
+
+## VALIDATION CRITERIA
+
+This chunk is complete when:
+1. coachDashboard tRPC router is created with all 10+ endpoints
+2. All 12 dashboard pages fetch data from tRPC (no mock data)
+3. Login/signup pages work with Supabase Auth
+4. Coach onboarding flow saves to backend
+5. All pages have loading states and error handling
+6. Web app compiles without TypeScript errors
+
+Test by running:
+```bash
+cd apps/web && pnpm dev
+```
+
+Log in as a coach and verify:
+- Dashboard shows real data (even if empty)
+- Client list loads from database
+- Create client invitation works
+- Program creation works
+- Messages work end-to-end

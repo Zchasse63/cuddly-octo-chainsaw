@@ -66,6 +66,14 @@ export default function AddShoeScreen() {
       return;
     }
 
+    // Validate maxMileage > initialMileage
+    const initialMiles = parseFloat(initialMileage) || 0;
+    const maxMiles = parseFloat(maxMileage) || 0;
+    if (maxMiles <= initialMiles) {
+      Alert.alert('Error', 'Retirement mileage must be greater than starting mileage');
+      return;
+    }
+
     // Convert distances to miles for the API (it converts to meters internally)
     const mileageMultiplier = distanceUnit === 'mi' ? 1 : 0.621371; // km to miles
 
@@ -127,13 +135,13 @@ export default function AddShoeScreen() {
                 width: 56,
                 height: 56,
                 borderRadius: borderRadius.md,
-                backgroundColor: '#4ECDC420',
+                backgroundColor: colors.activity.running + '20',
                 justifyContent: 'center',
                 alignItems: 'center',
                 marginRight: spacing.md,
               }}
             >
-              <Footprints size={28} color="#4ECDC4" />
+              <Footprints size={28} color={colors.activity.running} />
             </View>
             <View style={{ flex: 1 }}>
               <Text

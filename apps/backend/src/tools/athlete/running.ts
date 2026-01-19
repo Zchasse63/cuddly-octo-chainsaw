@@ -15,7 +15,7 @@ const METERS_PER_MILE = 1609.34;
 // Tool 24: Get Recent Runs
 export const getRecentRuns = createTool({
   name: 'getRecentRuns',
-  description: 'Get recent running activities with pace and distance',
+  description: 'Get recent running activities with pace and distance. Use this when the user asks "show my recent runs", "what did I run this week", "how fast have I been running", or when analyzing running volume and pace trends.',
   parameters: z.object({
     limit: z.number().min(1).max(30).default(10).describe('Number of runs to return'),
     runType: z.enum(['easy', 'tempo', 'interval', 'long_run', 'recovery', 'all']).default('all'),
@@ -54,7 +54,7 @@ export const getRecentRuns = createTool({
 // Tool 25: Get Running PRs
 export const getRunningPRs = createTool({
   name: 'getRunningPRs',
-  description: 'Get personal records for running distances',
+  description: 'Get personal records for running distances. Use this when the user asks "what are my running PRs", "what is my fastest 5k", "show my race times", or when celebrating achievements and setting race goals.',
   parameters: z.object({
     prType: z.enum(['1k', '1mi', '5k', '10k', 'half_marathon', 'marathon', 'all']).default('all'),
   }),

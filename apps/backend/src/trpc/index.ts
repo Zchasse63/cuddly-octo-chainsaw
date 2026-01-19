@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import superjson from 'superjson';
 import { db } from '../db';
 import { getUserFromHeader } from '../lib/supabase';
+import { rateLimit } from '../lib/upstash';
 import type { User } from '@supabase/supabase-js';
 
 // Context type
@@ -79,3 +80,44 @@ export const loggedProcedure = t.procedure.use(async ({ path, type, next }) => {
 
   return result;
 });
+
+// Rate limiting middleware factory
+// Creates a middleware that enforces rate limits based on user ID or IP
+const createRateLimitMiddleware = (limit: number, windowSeconds: number) =>
+  t.middleware(async ({ ctx, next, path }) => {
+    // Use user ID if authenticated, otherwise use a hash of path for public routes
+    const identifier = ctx.user?.id || `anon:${path}`;
+
+    const result = await rateLimit.check(identifier, limit, windowSeconds);
+
+    if (!result.allowed) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Rate limit exceeded. Try again in ${result.resetIn} seconds.`,
+      });
+    }
+
+    return next();
+  });
+
+// Rate limited procedures for different tiers
+
+// Standard rate limit: 100 requests per minute (general API)
+export const rateLimitedProcedure = protectedProcedure.use(
+  createRateLimitMiddleware(100, 60)
+);
+
+// Strict rate limit: 20 requests per hour (expensive AI operations)
+export const aiRateLimitedProcedure = protectedProcedure.use(
+  createRateLimitMiddleware(20, 3600)
+);
+
+// Auth rate limit: 10 requests per 15 minutes (brute force protection)
+export const authRateLimitedProcedure = publicProcedure.use(
+  createRateLimitMiddleware(10, 900)
+);
+
+// Search rate limit: 60 requests per minute (search operations)
+export const searchRateLimitedProcedure = protectedProcedure.use(
+  createRateLimitMiddleware(60, 60)
+);

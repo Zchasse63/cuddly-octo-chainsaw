@@ -39,6 +39,16 @@ export const lightColors = {
     red: '#FF3B30',
   },
 
+  // Activity type colors
+  activity: {
+    running: '#4ECDC4',
+    strength: '#FF6B6B',
+    tempo: '#FFE66D',
+    interval: '#FF6B6B',
+    recovery: '#34C759',
+    rest: '#6C757D',
+  },
+
   // Semantic
   semantic: {
     primary: '#007AFF',
@@ -128,6 +138,16 @@ export const darkColors = {
     teal: '#64D2FF',
     yellow: '#FFD60A',
     red: '#FF453A',
+  },
+
+  // Activity type colors
+  activity: {
+    running: '#4ECDC4',
+    strength: '#FF6B6B',
+    tempo: '#FFE66D',
+    interval: '#FF6B6B',
+    recovery: '#30D158',
+    rest: '#98989D',
   },
 
   // Semantic
@@ -224,6 +244,14 @@ export const borderRadius = {
   '2xl': 22,
   '3xl': 24,
   full: 9999,
+};
+
+// Medal colors for leaderboard/badges
+export const medalColors = {
+  gold: '#FFD700',
+  silver: '#C0C0C0',
+  bronze: '#CD7F32',
+  platinum: '#E5E4E2',
 };
 
 // Shadows

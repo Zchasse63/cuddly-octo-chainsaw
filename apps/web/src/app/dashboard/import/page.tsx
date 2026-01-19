@@ -14,7 +14,10 @@ import {
   Users,
   Download,
   X,
+  Loader,
 } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
+import { useToast } from '@/hooks/useToast';
 
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
@@ -44,6 +47,7 @@ const TARGET_FIELDS = [
 
 export default function ImportPage() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [step, setStep] = useState<ImportStep>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -52,6 +56,17 @@ export default function ImportPage() {
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [importResult, setImportResult] = useState<{ successCount: number; errors: Array<{ row: number; reason: string }> } | null>(null);
+
+  const importClientsMutation = trpc.coachDashboard.importClients.useMutation({
+    onSuccess: (result) => {
+      const successCount = result.successCount || 0;
+      showToast(`${successCount} clients imported successfully`, 'success');
+    },
+    onError: (error) => {
+      showToast('Failed to import clients', 'error');
+    },
+  });
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -73,14 +88,32 @@ export default function ImportPage() {
   }, []);
 
   const handleFileSelect = (selectedFile: File) => {
+    // File size validation (5MB limit)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024;
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      setErrors(['File size exceeds 5MB limit']);
+      return;
+    }
+
     setFile(selectedFile);
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const lines = text.split('\n').filter((line) => line.trim());
       const headers = lines[0].split(',').map((h) => h.trim().replace(/"/g, ''));
+
+      // Sanitize CSV cells to prevent formula injection
+      const sanitizeCell = (cell: string): string => {
+        const trimmed = cell.trim().replace(/"/g, '');
+        // Block cells starting with =, +, -, @, \t, \r (formula injection)
+        if (/^[=+\-@\t\r]/.test(trimmed)) {
+          return `'${trimmed}`; // Prefix with single quote to disable formula
+        }
+        return trimmed;
+      };
+
       const data = lines.slice(1).map((line) =>
-        line.split(',').map((cell) => cell.trim().replace(/"/g, ''))
+        line.split(',').map((cell) => sanitizeCell(cell))
       );
 
       setCsvHeaders(headers);
@@ -139,9 +172,27 @@ export default function ImportPage() {
   };
 
   const handleImport = async () => {
-    // TODO: API call to import clients
-    console.log('Importing:', parsedData);
-    setStep('complete');
+    if (errors.length > 0) {
+      return;
+    }
+
+    try {
+      // Convert parsed data back to CSV format for API
+      const csvContent = parsedData
+        .map(row => [row.firstName, row.lastName, row.email, row.phone || '', row.program || '']
+          .map(v => `"${v}"`)
+          .join(','))
+        .join('\n');
+
+      const result = await importClientsMutation.mutateAsync({
+        csvData: `First Name,Last Name,Email,Phone,Program\n${csvContent}`,
+      });
+
+      setImportResult(result as any);
+      setStep('complete');
+    } catch (err) {
+      setStep('upload');
+    }
   };
 
   const downloadTemplate = () => {
@@ -245,7 +296,7 @@ export default function ImportPage() {
           <div className="mb-6">
             <h3 className="text-lg font-semibold">Map Your Columns</h3>
             <p className="text-text-secondary">
-              We've auto-detected some mappings. Please verify and adjust as needed.
+              We&apos;ve auto-detected some mappings. Please verify and adjust as needed.
             </p>
           </div>
 
@@ -341,14 +392,35 @@ export default function ImportPage() {
           </div>
 
           <div className="mt-6 flex justify-between">
-            <Button variant="outline" onClick={() => setStep('mapping')}>
+            <Button variant="outline" onClick={() => setStep('mapping')} disabled={importClientsMutation.isPending}>
               Back
             </Button>
-            <Button onClick={handleImport} disabled={errors.length > 0}>
-              <Users className="w-4 h-4 mr-2" />
-              Import {parsedData.length} Clients
+            <Button onClick={handleImport} disabled={errors.length > 0 || importClientsMutation.isPending}>
+              {importClientsMutation.isPending ? (
+                <>
+                  <Loader className="w-4 h-4 mr-2 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Users className="w-4 h-4 mr-2" />
+                  Import {parsedData.length} Clients
+                </>
+              )}
             </Button>
           </div>
+
+          {importClientsMutation.error && (
+            <div className="mt-4 p-4 bg-accent-red/5 border border-accent-red/20 rounded-xl flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-accent-red flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-medium text-accent-red">Import failed</h4>
+                <p className="text-sm text-accent-red mt-1">
+                  {importClientsMutation.error.message || 'Unable to import clients. Please try again.'}
+                </p>
+              </div>
+            </div>
+          )}
         </Card>
       )}
 
@@ -358,9 +430,27 @@ export default function ImportPage() {
             <Check className="w-8 h-8" />
           </div>
           <h3 className="text-xl font-semibold mb-2">Import Complete!</h3>
-          <p className="text-text-secondary mb-6">
-            Successfully imported {parsedData.length} clients. They will receive invitation emails shortly.
+          <p className="text-text-secondary mb-2">
+            Successfully imported {importResult?.successCount || parsedData.length} clients.
           </p>
+          <p className="text-text-secondary mb-6">
+            They will receive invitation emails shortly.
+          </p>
+
+          {importResult?.errors && importResult.errors.length > 0 && (
+            <div className="mb-6 p-4 bg-accent-orange/5 border border-accent-orange/20 rounded-xl text-left">
+              <h4 className="font-medium text-accent-orange mb-2">
+                {importResult.errors.length} row{importResult.errors.length > 1 ? 's' : ''} had issues:
+              </h4>
+              <ul className="text-sm text-accent-orange space-y-1">
+                {importResult.errors.slice(0, 5).map((error, index) => (
+                  <li key={index}>Row {error.row}: {error.reason}</li>
+                ))}
+                {importResult.errors.length > 5 && <li>...and {importResult.errors.length - 5} more</li>}
+              </ul>
+            </div>
+          )}
+
           <div className="flex justify-center gap-4">
             <Button variant="outline" onClick={() => router.push('/dashboard/clients')}>
               View Clients
@@ -373,6 +463,7 @@ export default function ImportPage() {
               setMappings([]);
               setParsedData([]);
               setErrors([]);
+              setImportResult(null);
             }}>
               Import More
             </Button>

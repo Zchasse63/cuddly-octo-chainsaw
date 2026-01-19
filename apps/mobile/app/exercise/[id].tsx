@@ -30,6 +30,12 @@ export default function ExerciseDetailScreen() {
     { enabled: !!id }
   );
 
+  // Fetch form tips
+  const { data: formTips } = api.exercise.getFormTips.useQuery(
+    { exerciseId: id! },
+    { enabled: !!id }
+  );
+
   const isLoading = exerciseLoading || historyLoading;
 
   if (isLoading) {
@@ -270,6 +276,43 @@ export default function ExerciseDetailScreen() {
                 No history yet. Start logging sets!
               </Text>
             </Card>
+          )}
+
+          {/* Form Tips */}
+          {formTips && formTips.tips && formTips.tips.length > 0 && (
+            <>
+              <Text
+                style={{
+                  fontSize: fontSize.lg,
+                  fontWeight: fontWeight.semibold,
+                  color: colors.text.primary,
+                  marginTop: spacing.lg,
+                  marginBottom: spacing.sm,
+                }}
+              >
+                Form Tips
+              </Text>
+              <Card>
+                {formTips.tips.map((tip, index) => (
+                  <View key={index} style={{ marginBottom: index < formTips.tips.length - 1 ? spacing.sm : 0 }}>
+                    <Text
+                      style={{
+                        fontSize: fontSize.sm,
+                        fontWeight: fontWeight.semibold,
+                        color: colors.text.primary,
+                        marginBottom: spacing.xs,
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {tip.phase}
+                    </Text>
+                    <Text style={{ color: colors.text.secondary, lineHeight: 20 }}>
+                      • {tip.cue}
+                    </Text>
+                  </View>
+                ))}
+              </Card>
+            </>
           )}
 
           {/* Instructions */}

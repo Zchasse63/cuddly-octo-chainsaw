@@ -1,16 +1,24 @@
 import { z } from 'zod';
-import { router, publicProcedure, protectedProcedure } from '../trpc';
+import { router, publicProcedure, authRateLimitedProcedure, protectedProcedure } from '../trpc';
 import { supabaseAdmin } from '../lib/supabase';
 import { users, userProfiles } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
+// Password complexity validation
+const passwordSchema = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
+
 export const authRouter = router({
   // Sign up with email/password
-  signUp: publicProcedure
+  signUp: authRateLimitedProcedure
     .input(
       z.object({
         email: z.string().email(),
-        password: z.string().min(8),
+        password: passwordSchema,
         name: z.string().optional(),
       })
     )
@@ -49,7 +57,7 @@ export const authRouter = router({
     }),
 
   // Sign in with email/password
-  signIn: publicProcedure
+  signIn: authRateLimitedProcedure
     .input(
       z.object({
         email: z.string().email(),
@@ -160,5 +168,50 @@ export const authRouter = router({
         session: data.session,
         user: data.user,
       };
+    }),
+
+  // Change password
+  changePassword: authRateLimitedProcedure
+    .input(
+      z.object({
+        currentPassword: z.string(),
+        newPassword: passwordSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new Error('Not authenticated');
+      }
+
+      // Get user email
+      const userRecord = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.user.id),
+      });
+
+      if (!userRecord) {
+        throw new Error('User not found');
+      }
+
+      // Verify current password by attempting sign-in
+      const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+        email: userRecord.email,
+        password: input.currentPassword,
+      });
+
+      if (signInError) {
+        throw new Error('Current password incorrect');
+      }
+
+      // Update password via admin API
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        ctx.user.id,
+        { password: input.newPassword }
+      );
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      return { success: true, message: 'Password updated successfully' };
     }),
 });

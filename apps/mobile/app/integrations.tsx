@@ -32,75 +32,93 @@ interface Integration {
   dataTypes: string[];
 }
 
-const INTEGRATIONS: Integration[] = [
-  {
-    id: 'apple_health',
-    name: 'Apple Health',
-    icon: '❤️',
-    color: '#FF2D55',
-    description: 'Sync workouts, heart rate, and activity data',
-    connected: false,
-    dataTypes: ['Workouts', 'Heart Rate', 'Steps', 'Sleep'],
-  },
-  {
-    id: 'google_fit',
-    name: 'Google Fit',
-    icon: '💚',
-    color: '#4285F4',
-    description: 'Connect your Google Fit data',
-    connected: false,
-    dataTypes: ['Workouts', 'Steps', 'Heart Rate'],
-  },
-  {
-    id: 'garmin',
-    name: 'Garmin Connect',
-    icon: '⌚',
-    color: '#11BECD',
-    description: 'Sync runs, workouts, and health metrics',
-    connected: false,
-    dataTypes: ['Runs', 'Workouts', 'Heart Rate', 'Sleep', 'VO2 Max'],
-  },
-  {
-    id: 'strava',
-    name: 'Strava',
-    icon: '🏃',
-    color: '#FC4C02',
-    description: 'Import your Strava activities',
-    connected: false,
-    dataTypes: ['Runs', 'Rides', 'Workouts'],
-  },
-  {
-    id: 'whoop',
-    name: 'WHOOP',
-    icon: '💪',
-    color: '#000000',
-    description: 'Recovery and strain data',
-    connected: false,
-    dataTypes: ['Recovery', 'Strain', 'Sleep', 'Heart Rate'],
-  },
-  {
-    id: 'oura',
-    name: 'Oura Ring',
-    icon: '💍',
-    color: '#1DB954',
-    description: 'Sleep and readiness scores',
-    connected: false,
-    dataTypes: ['Sleep', 'Readiness', 'Activity'],
-  },
-  {
-    id: 'fitbit',
-    name: 'Fitbit',
-    icon: '📱',
-    color: '#00B0B9',
-    description: 'Steps, sleep, and activity',
-    connected: false,
-    dataTypes: ['Steps', 'Sleep', 'Workouts', 'Heart Rate'],
-  },
-];
+// Integration brand color mapping using theme colors
+function getIntegrationColors(integrationId: string, colors: any) {
+  const colorMap: Record<string, string> = {
+    apple_health: colors.accent.red,
+    google_fit: colors.accent.blue,
+    garmin: colors.accent.teal,
+    strava: colors.accent.orange,
+    whoop: colors.text.primary,
+    oura: colors.accent.green,
+    fitbit: colors.accent.teal,
+  };
+  return colorMap[integrationId] || colors.accent.blue;
+}
+
+function createIntegrations(colors: any): Integration[] {
+  return [
+    {
+      id: 'apple_health',
+      name: 'Apple Health',
+      icon: '❤️',
+      color: getIntegrationColors('apple_health', colors),
+      description: 'Sync workouts, heart rate, and activity data',
+      connected: false,
+      dataTypes: ['Workouts', 'Heart Rate', 'Steps', 'Sleep'],
+    },
+    {
+      id: 'google_fit',
+      name: 'Google Fit',
+      icon: '💚',
+      color: getIntegrationColors('google_fit', colors),
+      description: 'Connect your Google Fit data',
+      connected: false,
+      dataTypes: ['Workouts', 'Steps', 'Heart Rate'],
+    },
+    {
+      id: 'garmin',
+      name: 'Garmin Connect',
+      icon: '⌚',
+      color: getIntegrationColors('garmin', colors),
+      description: 'Sync runs, workouts, and health metrics',
+      connected: false,
+      dataTypes: ['Runs', 'Workouts', 'Heart Rate', 'Sleep', 'VO2 Max'],
+    },
+    {
+      id: 'strava',
+      name: 'Strava',
+      icon: '🏃',
+      color: getIntegrationColors('strava', colors),
+      description: 'Import your Strava activities',
+      connected: false,
+      dataTypes: ['Runs', 'Rides', 'Workouts'],
+    },
+    {
+      id: 'whoop',
+      name: 'WHOOP',
+      icon: '💪',
+      color: getIntegrationColors('whoop', colors),
+      description: 'Recovery and strain data',
+      connected: false,
+      dataTypes: ['Recovery', 'Strain', 'Sleep', 'Heart Rate'],
+    },
+    {
+      id: 'oura',
+      name: 'Oura Ring',
+      icon: '💍',
+      color: getIntegrationColors('oura', colors),
+      description: 'Sleep and readiness scores',
+      connected: false,
+      dataTypes: ['Sleep', 'Readiness', 'Activity'],
+    },
+    {
+      id: 'fitbit',
+      name: 'Fitbit',
+      icon: '📱',
+      color: getIntegrationColors('fitbit', colors),
+      description: 'Steps, sleep, and activity',
+      connected: false,
+      dataTypes: ['Steps', 'Sleep', 'Workouts', 'Heart Rate'],
+    },
+  ];
+}
 
 export default function IntegrationsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+
+  const INTEGRATIONS = createIntegrations(colors);
 
   // Fetch user's connected integrations (Apple Health)
   const { data: appleHealthStatus, refetch } = api.wearables.getAppleHealthStatus.useQuery();
@@ -132,13 +150,13 @@ export default function IntegrationsScreen() {
     },
   });
 
-  // Sync mutation - use updateAppleHealthConnection since syncAppleHealthData doesn't exist
+  // Manual sync mutation - triggers sync by updating connection with current timestamp
   const syncMutation = api.wearables.updateAppleHealthConnection.useMutation({
     onSuccess: () => {
       refetch();
       Alert.alert('Synced', 'Data synced successfully!');
     },
-    onError: (error) => {
+    onError: (error: { message?: string }) => {
       Alert.alert('Error', error.message || 'Failed to sync');
     },
   });
@@ -182,7 +200,7 @@ export default function IntegrationsScreen() {
   };
 
   const handleSync = (_integrationId: string) => {
-    // Trigger a sync by updating the connection status
+    // Trigger manual sync by updating connection status (updates lastSyncAt)
     syncMutation.mutate({ isConnected: true });
   };
 

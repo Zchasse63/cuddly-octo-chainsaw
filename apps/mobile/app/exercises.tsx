@@ -27,10 +27,13 @@ const muscleGroups = [
   'Glutes',
 ];
 
-const difficultyColors: Record<string, string> = {
-  beginner: '#4ECDC4',
-  intermediate: '#FFE66D',
-  advanced: '#FF6B6B',
+const getDifficultyColor = (difficulty: string, colors: any): string => {
+  const map: Record<string, string> = {
+    beginner: colors.activity.running,
+    intermediate: colors.activity.tempo,
+    advanced: colors.activity.strength,
+  };
+  return map[difficulty] || colors.text.tertiary;
 };
 
 export default function ExercisesScreen() {
@@ -119,7 +122,7 @@ export default function ExercisesScreen() {
               <Text
                 style={{
                   fontSize: fontSize.sm,
-                  color: difficultyColors[item.difficulty] || colors.text.tertiary,
+                  color: getDifficultyColor(item.difficulty, colors),
                 }}
               >
                 {item.difficulty}

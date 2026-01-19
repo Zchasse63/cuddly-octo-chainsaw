@@ -13,13 +13,13 @@ export default function SignupPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState('');
 
   const signUp = trpc.auth.signUp.useMutation({
     onSuccess: () => {
-      // Account created - redirect to login page
-      // User may need to verify email depending on Supabase settings
-      router.push('/login?registered=true');
+      // Account created - redirect to onboarding page
+      router.push('/onboarding');
     },
     onError: (err) => {
       setError(err.message || 'Failed to create account');
@@ -29,6 +29,12 @@ export default function SignupPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!termsAccepted) {
+      setError('You must accept the Terms of Service and Privacy Policy to continue');
+      return;
+    }
+
     signUp.mutate({ email, password, name });
   };
 
@@ -43,7 +49,7 @@ export default function SignupPage() {
           </h2>
           <p className="text-white/80">
             Join thousands of coaches using VoiceFit to transform
-            their clients' fitness journeys.
+            their clients&apos; fitness journeys.
           </p>
         </div>
       </div>
@@ -108,6 +114,8 @@ export default function SignupPage() {
             <label className="flex items-start gap-2 cursor-pointer">
               <input
                 type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
                 className="w-4 h-4 mt-1 rounded border-background-tertiary text-accent-blue focus:ring-accent-blue"
                 required
               />

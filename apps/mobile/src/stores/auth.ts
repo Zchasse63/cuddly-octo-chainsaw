@@ -188,13 +188,49 @@ export const useAuthStore = create<AuthState>()(
       },
 
       signInWithApple: async () => {
-        // Implementation requires native setup
-        return { success: false, error: 'Not implemented yet' };
+        set({ isLoading: true });
+        try {
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'apple',
+            options: {
+              redirectTo: 'voicefit://',
+            },
+          });
+
+          if (error) {
+            set({ isLoading: false });
+            return { success: false, error: error.message };
+          }
+
+          set({ isLoading: false });
+          return { success: true };
+        } catch (error: any) {
+          set({ isLoading: false });
+          return { success: false, error: error.message || 'Apple sign in failed' };
+        }
       },
 
       signInWithGoogle: async () => {
-        // Implementation requires native setup
-        return { success: false, error: 'Not implemented yet' };
+        set({ isLoading: true });
+        try {
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+              redirectTo: 'voicefit://',
+            },
+          });
+
+          if (error) {
+            set({ isLoading: false });
+            return { success: false, error: error.message };
+          }
+
+          set({ isLoading: false });
+          return { success: true };
+        } catch (error: any) {
+          set({ isLoading: false });
+          return { success: false, error: error.message || 'Google sign in failed' };
+        }
       },
 
       refreshSession: async () => {

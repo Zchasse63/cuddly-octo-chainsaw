@@ -15,11 +15,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   const signIn = trpc.auth.signIn.useMutation({
-    onSuccess: (data) => {
-      // Store the access token from the Supabase session
-      if (data.session?.access_token) {
-        localStorage.setItem('token', data.session.access_token);
-      }
+    onSuccess: () => {
+      // Session is automatically managed by Supabase in httpOnly cookie
       router.push('/dashboard');
     },
     onError: (err) => {
@@ -107,7 +104,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-8 text-center text-text-secondary">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/signup" className="text-accent-blue hover:underline">
               Sign up
             </Link>

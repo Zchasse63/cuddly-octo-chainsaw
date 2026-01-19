@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { trpc } from '@/lib/trpc';
+import { useToast } from '@/hooks/useToast';
 import {
   ArrowLeft,
   User,
@@ -15,6 +17,9 @@ import {
   Dumbbell,
   Upload,
   Check,
+  AlertCircle,
+  CheckCircle,
+  Loader,
 } from 'lucide-react';
 
 type Step = 'info' | 'goals' | 'program' | 'review';
@@ -47,7 +52,15 @@ const PROGRAMS = [
 
 export default function NewClientPage() {
   const router = useRouter();
+  const { showToast } = useToast();
+  const utils = trpc.useUtils();
   const [currentStep, setCurrentStep] = useState<Step>('info');
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -58,6 +71,68 @@ export default function NewClientPage() {
     experienceLevel: '',
     programId: '',
     notes: '',
+  });
+
+  const inviteClientMutation = trpc.coachDashboard.inviteClient.useMutation({
+    onMutate: async (newClient) => {
+      // Cancel outgoing refetches
+      await utils.coachDashboard.getClientList.cancel();
+
+      // Snapshot previous value
+      const previousClients = utils.coachDashboard.getClientList.getData();
+
+      // Optimistically update cache with proper structure
+      utils.coachDashboard.getClientList.setData({ status: 'all', search: '', limit: 20, offset: 0 }, (old: any) => {
+        if (!old) return old;
+
+        const tempClient = {
+          relationshipId: `temp-rel-${Date.now()}`,
+          clientId: `temp-${Date.now()}`,
+          status: 'pending' as const,
+          assignedAt: new Date(),
+          acceptedAt: null,
+          name: newClient.name,
+          experienceLevel: 'beginner' as const,
+          tier: 'free' as const,
+        };
+
+        return {
+          ...old,
+          clients: [tempClient, ...old.clients],
+          totalCount: old.totalCount + 1,
+        };
+      });
+
+      return { previousClients };
+    },
+    onSuccess: (data) => {
+      const email = inviteEmail || formData.email;
+      setSuccessMessage(`Invitation sent successfully to ${email}!`);
+      showToast('Client invitation sent!', 'success');
+      setInviteEmail('');
+      setInviteName('');
+      setInviteMessage('');
+      setShowInviteForm(false);
+
+      // Redirect to clients page after brief delay
+      setTimeout(() => {
+        router.push('/dashboard/clients');
+      }, 1500);
+    },
+    onError: (error: any, newClient: any, context: any) => {
+      // Rollback on error
+      if (context?.previousClients) {
+        utils.coachDashboard.getClientList.setData({ status: 'all', search: '', limit: 20, offset: 0 }, context.previousClients);
+      }
+
+      setErrorMessage(error.message || 'Failed to send invitation. Please try again.');
+      showToast('Failed to send invitation', 'error');
+      setTimeout(() => setErrorMessage(''), 5000);
+    },
+    onSettled: () => {
+      // Sync with server state
+      utils.coachDashboard.getClientList.invalidate();
+    },
   });
 
   const steps: Step[] = ['info', 'goals', 'program', 'review'];
@@ -89,9 +164,29 @@ export default function NewClientPage() {
   };
 
   const handleSubmit = async () => {
-    // TODO: Submit to API
-    console.log('Submitting:', formData);
-    router.push('/dashboard/clients');
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+    const message = formData.notes || undefined;
+
+    inviteClientMutation.mutate({
+      email: formData.email,
+      name: fullName,
+      message: message,
+    });
+  };
+
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!inviteEmail || !inviteName) {
+      setErrorMessage('Please fill in all required fields');
+      return;
+    }
+
+    inviteClientMutation.mutate({
+      email: inviteEmail,
+      name: inviteName,
+      message: inviteMessage || undefined,
+    });
   };
 
   const canProceed = () => {
@@ -133,13 +228,114 @@ export default function NewClientPage() {
         />
       </div>
 
+      {/* Alert Messages */}
+      {successMessage && (
+        <div className="p-4 bg-green-500/10 border border-green-500 rounded-lg flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-sm text-green-700">{successMessage}</p>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="p-4 bg-red-500/10 border border-red-500 rounded-lg flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-red-500" />
+          <p className="text-sm text-red-700">{errorMessage}</p>
+        </div>
+      )}
+
+      {/* Quick Invite Form */}
+      <Card variant="elevated" padding="lg" className="bg-background-secondary/50">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold flex items-center gap-2">
+                <Mail className="w-4 h-4" />
+                Send Direct Invite
+              </h3>
+              <p className="text-sm text-text-secondary">
+                Invite a client directly via email without going through the full onboarding
+              </p>
+            </div>
+            <button
+              onClick={() => setShowInviteForm(!showInviteForm)}
+              className="px-4 py-2 bg-accent-blue text-white rounded-lg hover:bg-accent-blue/90 transition-colors"
+            >
+              {showInviteForm ? 'Collapse' : 'Expand'}
+            </button>
+          </div>
+
+          {showInviteForm && (
+            <form onSubmit={handleInviteSubmit} className="space-y-4 pt-4 border-t border-background-tertiary">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Name *</label>
+                  <Input
+                    type="text"
+                    value={inviteName}
+                    onChange={(e) => setInviteName(e.target.value)}
+                    placeholder="John Doe"
+                    disabled={inviteClientMutation.isPending}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Email Address *</label>
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="john@example.com"
+                    disabled={inviteClientMutation.isPending}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Message (optional)</label>
+                <textarea
+                  value={inviteMessage}
+                  onChange={(e) => setInviteMessage(e.target.value)}
+                  placeholder="Add a personal message to include with the invitation..."
+                  rows={2}
+                  disabled={inviteClientMutation.isPending}
+                  className="w-full px-4 py-3 bg-background-secondary rounded-xl border border-background-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowInviteForm(false);
+                    setInviteEmail('');
+                    setInviteName('');
+                    setInviteMessage('');
+                  }}
+                  disabled={inviteClientMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={inviteClientMutation.isPending || !inviteEmail || !inviteName}
+                  className="flex items-center gap-2"
+                >
+                  {inviteClientMutation.isPending && (
+                    <Loader className="w-4 h-4 animate-spin" />
+                  )}
+                  {inviteClientMutation.isPending ? 'Sending...' : 'Send Invitation'}
+                </Button>
+              </div>
+            </form>
+          )}
+        </div>
+      </Card>
+
       {/* Step Content */}
       <Card variant="elevated" padding="lg">
         {currentStep === 'info' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-semibold mb-2">Basic Information</h2>
-              <p className="text-text-secondary">Enter your client's contact details</p>
+              <p className="text-text-secondary">Enter your client&apos;s contact details</p>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">

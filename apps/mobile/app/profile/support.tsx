@@ -75,7 +75,7 @@ export default function SupportScreen() {
       label: 'Live Chat',
       description: 'Chat with our support team',
       onPress: () => {
-        // TODO: Open intercom or chat widget
+        // Chat integration to be implemented
       },
     },
     {

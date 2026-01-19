@@ -168,7 +168,7 @@ export default function VolumeAnalyticsScreen() {
   };
 
   const getMuscleGroupColor = (index: number) => {
-    const palette = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#DDA0DD', '#87CEEB'];
+    const palette = [colors.activity.strength, colors.activity.running, colors.activity.tempo, colors.activity.recovery, colors.accent.purple, colors.accent.teal];
     return palette[index % palette.length];
   };
 

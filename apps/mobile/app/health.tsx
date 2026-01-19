@@ -46,9 +46,9 @@ export default function HealthScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [timePeriod, setTimePeriod] = useState<7 | 14 | 30 | 60>(14);
 
-  // Fetch health intelligence data (returns { insights: string })
-  const { data: healthData, refetch } = api.analytics.getAIHealthInsights.useQuery({
-    period: timePeriod,
+  // Fetch health correlations from api.analytics.getHealthCorrelations
+  const { data: healthCorrelations, refetch } = api.analytics.getHealthCorrelations.useQuery({
+    period: timePeriod as 7 | 14 | 30 | 60,
   });
 
   // Fetch injury risk assessment
@@ -86,32 +86,37 @@ export default function HealthScreen() {
   const recoveryScore = readinessData?.overallScore || 80; // Use overall as recovery proxy
   const readinessScore = readinessData?.overallScore || 72;
 
-  const correlations: Correlation[] = [
-    {
-      factor1: 'Sleep Quality',
-      factor2: 'Workout Performance',
-      correlation: 0.78,
-      strength: 'strong',
-      direction: 'positive',
-      insight: 'Better sleep is strongly linked to improved workout performance',
-    },
-    {
-      factor1: 'Protein Intake',
-      factor2: 'Recovery Speed',
-      correlation: 0.65,
-      strength: 'moderate',
-      direction: 'positive',
-      insight: 'Higher protein intake moderately improves recovery time',
-    },
-    {
-      factor1: 'Training Volume',
-      factor2: 'Recovery Score',
-      correlation: -0.52,
-      strength: 'moderate',
-      direction: 'negative',
-      insight: 'Higher training volume tends to reduce recovery scores',
-    },
-  ];
+  // Map backend correlations to UI format
+  const correlations: Correlation[] = (healthCorrelations || []).map((corr) => ({
+    factor1: getCorrelationFactor1(corr.type),
+    factor2: getCorrelationFactor2(corr.type),
+    correlation: corr.correlation,
+    strength: corr.strength,
+    direction: corr.direction === 'none' ? 'positive' : corr.direction,
+    insight: corr.insight,
+  }));
+
+  function getCorrelationFactor1(type: string): string {
+    const map: Record<string, string> = {
+      nutrition_recovery: 'Nutrition',
+      sleep_performance: 'Sleep Quality',
+      volume_recovery: 'Training Volume',
+      sleep_workout_quality: 'Sleep',
+      stress_performance: 'Stress Level',
+    };
+    return map[type] || 'Factor 1';
+  }
+
+  function getCorrelationFactor2(type: string): string {
+    const map: Record<string, string> = {
+      nutrition_recovery: 'Recovery Speed',
+      sleep_performance: 'Workout Performance',
+      volume_recovery: 'Recovery Score',
+      sleep_workout_quality: 'Workout Quality',
+      stress_performance: 'Performance',
+    };
+    return map[type] || 'Factor 2';
+  }
 
   // Use readiness data for metrics with defaults
   const metrics: HealthMetric[] = [
@@ -233,24 +238,24 @@ export default function HealthScreen() {
         {/* Overall Scores */}
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg }}>
           <ScoreCard
-            icon={<Heart size={20} color="#FF6B6B" />}
+            icon={<Heart size={20} color={colors.activity.strength} />}
             label="Health"
             score={healthScore}
-            color="#FF6B6B"
+            color={colors.activity.strength}
             colors={colors}
           />
           <ScoreCard
-            icon={<Shield size={20} color="#4ECDC4" />}
+            icon={<Shield size={20} color={colors.activity.running} />}
             label="Recovery"
             score={recoveryScore}
-            color="#4ECDC4"
+            color={colors.activity.running}
             colors={colors}
           />
           <ScoreCard
-            icon={<Zap size={20} color="#FFE66D" />}
+            icon={<Zap size={20} color={colors.activity.tempo} />}
             label="Readiness"
             score={readinessScore}
-            color="#FFE66D"
+            color={colors.activity.tempo}
             colors={colors}
           />
         </View>

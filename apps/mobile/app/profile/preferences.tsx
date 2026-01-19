@@ -367,7 +367,7 @@ export default function PreferencesScreen() {
           label="Language"
           value={language}
           onPress={() => {
-            // TODO: Open language picker
+            // Language picker implementation pending
           }}
         />
 

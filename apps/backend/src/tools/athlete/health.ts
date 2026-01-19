@@ -13,7 +13,7 @@ import { readinessScores, trainingLoad, nutritionSummaries, dailyHealthMetrics }
 // Tool 18: Get Readiness Score
 export const getReadinessScore = createTool({
   name: 'getReadinessScore',
-  description: 'Get the user\'s readiness score for today or recent days',
+  description: 'Get the user\'s readiness score for today or recent days. Use this when the user asks "how am I feeling today", "am I ready to train", "what is my readiness", or when assessing recovery status and workout intensity recommendations.',
   parameters: z.object({
     days: z.number().min(1).max(30).default(1).describe('Number of days of readiness data'),
   }),
@@ -56,7 +56,7 @@ export const getReadinessScore = createTool({
 // Tool 19: Get Health Metrics
 export const getHealthMetrics = createTool({
   name: 'getHealthMetrics',
-  description: 'Get health metrics from wearables (steps, heart rate, HRV)',
+  description: 'Get health metrics from wearables (steps, heart rate, HRV). Use this when the user asks "what are my health stats", "show my HRV", "how many steps did I get", or when analyzing recovery metrics and daily activity levels.',
   parameters: z.object({
     days: z.number().min(1).max(30).default(7).describe('Number of days'),
   }),
@@ -96,7 +96,7 @@ export const getHealthMetrics = createTool({
 // Tool 20: Get Sleep Data
 export const getSleepData = createTool({
   name: 'getSleepData',
-  description: 'Get sleep tracking data from wearables',
+  description: 'Get sleep tracking data from wearables. Use this when the user asks "how did I sleep", "show my sleep data", "how much sleep am I getting", or when analyzing sleep quality and recovery patterns.',
   parameters: z.object({
     days: z.number().min(1).max(30).default(7).describe('Number of days'),
   }),

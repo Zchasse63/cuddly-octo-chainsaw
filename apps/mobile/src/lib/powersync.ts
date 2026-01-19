@@ -1,322 +1,351 @@
-/**
- * PowerSync Configuration for Offline-First Support
- *
- * PowerSync is critical for VoiceFit because:
- * 1. Users often work out in gyms with poor connectivity
- * 2. Running activities need to work offline with GPS
- * 3. Voice logging needs to queue and sync later
- *
- * Sync Tables (12 tables):
- * - workouts, workout_sets
- * - running_activities
- * - readiness_check_ins
- * - user_profiles
- * - exercises (read-only)
- * - personal_records
- * - user_badges, user_streaks
- * - running_shoes
- * - training_calendar
- * - program_adherence
- */
+import { PowerSyncDatabase } from '@powersync/react-native';
+import { PowerSyncBackendConnector } from '@powersync/react-native';
+import { column, Schema, Table } from '@powersync/react-native';
+import { supabase } from '../stores/auth';
 
-// PowerSync is not yet installed - using placeholder type
-// TODO: Install @powersync/react-native when ready to implement offline-first
-type AbstractPowerSyncDatabase = {
-  execute: (sql: string, params?: unknown[]) => Promise<unknown>;
-  getAll: <T>(sql: string, params?: unknown[]) => Promise<T[]>;
-};
+// PowerSync schema matching backend Drizzle schemas (11 sync tables)
+const POWERSYNC_SCHEMA = new Schema({
+  workouts: new Table({
+    id: column.text,
+    user_id: column.text,
+    name: column.text,
+    notes: column.text,
+    status: column.text,
+    started_at: column.text,
+    completed_at: column.text,
+    duration: column.integer,
+    program_id: column.text,
+    program_week: column.integer,
+    program_day: column.integer,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  workout_sets: new Table({
+    id: column.text,
+    workout_id: column.text,
+    exercise_id: column.text,
+    user_id: column.text,
+    set_number: column.integer,
+    reps: column.integer,
+    weight: column.real,
+    weight_unit: column.text,
+    rpe: column.real,
+    logging_method: column.text,
+    voice_transcript: column.text,
+    confidence: column.real,
+    is_pr: column.integer,
+    estimated_1rm: column.real,
+    rest_duration: column.integer,
+    synced_at: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  exercises: new Table({
+    id: column.text,
+    name: column.text,
+    description: column.text,
+    instructions: column.text,
+    primary_muscle: column.text,
+    secondary_muscles: column.text,
+    movement_pattern: column.text,
+    equipment: column.text,
+    difficulty: column.text,
+    is_compound: column.integer,
+    is_unilateral: column.integer,
+    is_custom: column.integer,
+    created_by_user_id: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  running_activities: new Table({
+    id: column.text,
+    user_id: column.text,
+    run_type: column.text,
+    name: column.text,
+    notes: column.text,
+    distance_meters: column.real,
+    duration_seconds: column.integer,
+    avg_pace_seconds_per_km: column.real,
+    avg_heart_rate: column.integer,
+    max_heart_rate: column.integer,
+    elevation_gain_meters: column.real,
+    calories_burned: column.integer,
+    avg_cadence: column.integer,
+    avg_stride_length: column.real,
+    splits: column.text,
+    route_polyline: column.text,
+    start_latitude: column.real,
+    start_longitude: column.real,
+    source: column.text,
+    external_id: column.text,
+    program_id: column.text,
+    program_week: column.integer,
+    program_day: column.integer,
+    started_at: column.text,
+    completed_at: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  readiness_scores: new Table({
+    id: column.text,
+    user_id: column.text,
+    date: column.text,
+    overall_score: column.integer,
+    sleep_quality: column.integer,
+    energy_level: column.integer,
+    motivation: column.integer,
+    soreness: column.integer,
+    stress: column.integer,
+    notes: column.text,
+    hrv_score: column.real,
+    resting_hr: column.real,
+    sleep_hours: column.real,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  injuries: new Table({
+    id: column.text,
+    user_id: column.text,
+    name: column.text,
+    body_part: column.text,
+    side: column.text,
+    description: column.text,
+    severity: column.text,
+    status: column.text,
+    injury_date: column.text,
+    expected_recovery_date: column.text,
+    healed_date: column.text,
+    exercises_to_avoid: column.text,
+    movements_to_avoid: column.text,
+    recommended_exercises: column.text,
+    diagnosed_by: column.text,
+    treatment_notes: column.text,
+    physical_therapy_notes: column.text,
+    is_active: column.integer,
+    affects_workouts: column.integer,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  nutrition_summaries: new Table({
+    id: column.text,
+    user_id: column.text,
+    date: column.text,
+    calories: column.integer,
+    protein: column.real,
+    carbohydrates: column.real,
+    fat: column.real,
+    fiber: column.real,
+    sugar: column.real,
+    sodium: column.real,
+    potassium: column.real,
+    calcium: column.real,
+    iron: column.real,
+    vitamin_a: column.real,
+    vitamin_c: column.real,
+    vitamin_d: column.real,
+    water_ml: column.integer,
+    caffeine_mg: column.integer,
+    source: column.text,
+    last_synced_at: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  running_shoes: new Table({
+    id: column.text,
+    user_id: column.text,
+    brand: column.text,
+    model: column.text,
+    nickname: column.text,
+    color: column.text,
+    size: column.text,
+    purchase_date: column.text,
+    purchase_price: column.real,
+    purchase_location: column.text,
+    initial_mileage: column.real,
+    total_mileage_meters: column.real,
+    replacement_threshold_meters: column.real,
+    is_active: column.integer,
+    is_default: column.integer,
+    retired_at: column.text,
+    retired_reason: column.text,
+    notes: column.text,
+    total_runs: column.integer,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  training_programs: new Table({
+    id: column.text,
+    user_id: column.text,
+    name: column.text,
+    description: column.text,
+    program_type: column.text,
+    duration_weeks: column.integer,
+    days_per_week: column.integer,
+    primary_goal: column.text,
+    secondary_goals: column.text,
+    status: column.text,
+    current_week: column.integer,
+    current_day: column.integer,
+    start_date: column.text,
+    end_date: column.text,
+    completed_at: column.text,
+    is_template: column.integer,
+    is_public: column.integer,
+    created_at: column.text,
+    updated_at: column.text,
+  }),
+  program_days: new Table({
+    id: column.text,
+    program_id: column.text,
+    week_id: column.text,
+    week_number: column.integer,
+    day_of_week: column.integer,
+    day_number: column.integer,
+    workout_type: column.text,
+    name: column.text,
+    description: column.text,
+    estimated_duration: column.integer,
+    is_completed: column.integer,
+    completed_workout_id: column.text,
+    completed_run_id: column.text,
+    completed_at: column.text,
+    scheduled_date: column.text,
+    created_at: column.text,
+  }),
+  badge_definitions: new Table({
+    id: column.text,
+    name: column.text,
+    description: column.text,
+    icon: column.text,
+    category: column.text,
+    rarity: column.text,
+    trigger_type: column.text,
+    trigger_value: column.integer,
+    points: column.integer,
+    is_hidden: column.integer,
+    order: column.integer,
+    created_at: column.text,
+  }),
+});
 
-// PowerSync schema definition
-export const PowerSyncSchema = {
-  tables: [
-    // User profile - sync all fields
-    {
-      name: 'user_profiles',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'name', type: 'TEXT' },
-        { name: 'avatar_url', type: 'TEXT' },
-        { name: 'experience_level', type: 'TEXT' },
-        { name: 'goals', type: 'TEXT' }, // JSON array
-        { name: 'training_frequency', type: 'TEXT' },
-        { name: 'preferred_equipment', type: 'TEXT' }, // JSON array
-        { name: 'injuries', type: 'TEXT' },
-        { name: 'tier', type: 'TEXT' },
-        { name: 'theme', type: 'TEXT' },
-        { name: 'preferred_weight_unit', type: 'TEXT' },
-        { name: 'notifications_enabled', type: 'INTEGER' },
-        { name: 'onboarding_completed', type: 'INTEGER' },
-        { name: 'created_at', type: 'TEXT' },
-        { name: 'updated_at', type: 'TEXT' },
-      ],
-    },
+// PowerSync database instance
+export const powerSync = new PowerSyncDatabase({
+  schema: POWERSYNC_SCHEMA,
+  database: {
+    dbFilename: 'voicefit.db',
+  },
+});
 
-    // Workouts - core logging table
-    {
-      name: 'workouts',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'name', type: 'TEXT' },
-        { name: 'notes', type: 'TEXT' },
-        { name: 'status', type: 'TEXT' },
-        { name: 'logging_method', type: 'TEXT' },
-        { name: 'started_at', type: 'TEXT' },
-        { name: 'completed_at', type: 'TEXT' },
-        { name: 'duration_seconds', type: 'INTEGER' },
-        { name: 'total_volume', type: 'REAL' },
-        { name: 'total_sets', type: 'INTEGER' },
-        { name: 'total_reps', type: 'INTEGER' },
-        { name: 'created_at', type: 'TEXT' },
-        { name: 'updated_at', type: 'TEXT' },
-      ],
-    },
-
-    // Workout sets
-    {
-      name: 'workout_sets',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'workout_id', type: 'TEXT' },
-        { name: 'exercise_id', type: 'TEXT' },
-        { name: 'set_number', type: 'INTEGER' },
-        { name: 'weight', type: 'REAL' },
-        { name: 'reps', type: 'INTEGER' },
-        { name: 'rpe', type: 'REAL' },
-        { name: 'is_warmup', type: 'INTEGER' },
-        { name: 'is_pr', type: 'INTEGER' },
-        { name: 'notes', type: 'TEXT' },
-        { name: 'created_at', type: 'TEXT' },
-      ],
-    },
-
-    // Running activities
-    {
-      name: 'running_activities',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'run_type', type: 'TEXT' },
-        { name: 'name', type: 'TEXT' },
-        { name: 'notes', type: 'TEXT' },
-        { name: 'distance_meters', type: 'REAL' },
-        { name: 'duration_seconds', type: 'INTEGER' },
-        { name: 'avg_pace_seconds_per_km', type: 'REAL' },
-        { name: 'avg_heart_rate', type: 'INTEGER' },
-        { name: 'max_heart_rate', type: 'INTEGER' },
-        { name: 'elevation_gain_meters', type: 'REAL' },
-        { name: 'calories_burned', type: 'INTEGER' },
-        { name: 'splits', type: 'TEXT' }, // JSON
-        { name: 'route_polyline', type: 'TEXT' },
-        { name: 'start_latitude', type: 'REAL' },
-        { name: 'start_longitude', type: 'REAL' },
-        { name: 'source', type: 'TEXT' },
-        { name: 'started_at', type: 'TEXT' },
-        { name: 'completed_at', type: 'TEXT' },
-        { name: 'created_at', type: 'TEXT' },
-        { name: 'updated_at', type: 'TEXT' },
-      ],
-    },
-
-    // Readiness check-ins
-    {
-      name: 'readiness_check_ins',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'sleep_hours', type: 'REAL' },
-        { name: 'sleep_quality', type: 'INTEGER' },
-        { name: 'stress_level', type: 'INTEGER' },
-        { name: 'soreness_level', type: 'INTEGER' },
-        { name: 'energy_level', type: 'INTEGER' },
-        { name: 'motivation_level', type: 'INTEGER' },
-        { name: 'nutrition_quality', type: 'INTEGER' },
-        { name: 'recovery_score', type: 'INTEGER' },
-        { name: 'notes', type: 'TEXT' },
-        { name: 'created_at', type: 'TEXT' },
-      ],
-    },
-
-    // Exercises (read-only sync)
-    {
-      name: 'exercises',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'name', type: 'TEXT' },
-        { name: 'description', type: 'TEXT' },
-        { name: 'instructions', type: 'TEXT' },
-        { name: 'primary_muscle', type: 'TEXT' },
-        { name: 'secondary_muscles', type: 'TEXT' }, // JSON
-        { name: 'movement_pattern', type: 'TEXT' },
-        { name: 'equipment', type: 'TEXT' }, // JSON
-        { name: 'difficulty', type: 'TEXT' },
-        { name: 'is_compound', type: 'INTEGER' },
-        { name: 'is_unilateral', type: 'INTEGER' },
-        { name: 'aliases', type: 'TEXT' }, // JSON
-      ],
-    },
-
-    // Personal records
-    {
-      name: 'personal_records',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'exercise_id', type: 'TEXT' },
-        { name: 'weight', type: 'REAL' },
-        { name: 'reps', type: 'INTEGER' },
-        { name: 'estimated_1rm', type: 'REAL' },
-        { name: 'previous_pr_id', type: 'TEXT' },
-        { name: 'improvement_percent', type: 'REAL' },
-        { name: 'workout_id', type: 'TEXT' },
-        { name: 'workout_set_id', type: 'TEXT' },
-        { name: 'achieved_at', type: 'TEXT' },
-        { name: 'created_at', type: 'TEXT' },
-      ],
-    },
-
-    // User badges
-    {
-      name: 'user_badges',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'badge_id', type: 'TEXT' },
-        { name: 'badge_type', type: 'TEXT' },
-        { name: 'earned_at', type: 'TEXT' },
-        { name: 'metadata', type: 'TEXT' }, // JSON
-      ],
-    },
-
-    // User streaks
-    {
-      name: 'user_streaks',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'streak_type', type: 'TEXT' },
-        { name: 'current_streak', type: 'INTEGER' },
-        { name: 'longest_streak', type: 'INTEGER' },
-        { name: 'last_activity_date', type: 'TEXT' },
-        { name: 'created_at', type: 'TEXT' },
-        { name: 'updated_at', type: 'TEXT' },
-      ],
-    },
-
-    // Running shoes
-    {
-      name: 'running_shoes',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'brand', type: 'TEXT' },
-        { name: 'model', type: 'TEXT' },
-        { name: 'nickname', type: 'TEXT' },
-        { name: 'color', type: 'TEXT' },
-        { name: 'size', type: 'TEXT' },
-        { name: 'initial_mileage', type: 'REAL' },
-        { name: 'total_mileage_meters', type: 'REAL' },
-        { name: 'replacement_threshold_meters', type: 'REAL' },
-        { name: 'is_active', type: 'INTEGER' },
-        { name: 'is_default', type: 'INTEGER' },
-        { name: 'total_runs', type: 'INTEGER' },
-        { name: 'created_at', type: 'TEXT' },
-        { name: 'updated_at', type: 'TEXT' },
-      ],
-    },
-
-    // Training calendar entries
-    {
-      name: 'training_calendar',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'scheduled_date', type: 'TEXT' },
-        { name: 'activity_type', type: 'TEXT' },
-        { name: 'program_id', type: 'TEXT' },
-        { name: 'program_day_id', type: 'TEXT' },
-        { name: 'workout_id', type: 'TEXT' },
-        { name: 'running_activity_id', type: 'TEXT' },
-        { name: 'title', type: 'TEXT' },
-        { name: 'description', type: 'TEXT' },
-        { name: 'workout_type', type: 'TEXT' },
-        { name: 'estimated_duration', type: 'INTEGER' },
-        { name: 'status', type: 'TEXT' },
-        { name: 'completed_at', type: 'TEXT' },
-        { name: 'user_notes', type: 'TEXT' },
-        { name: 'created_at', type: 'TEXT' },
-        { name: 'updated_at', type: 'TEXT' },
-      ],
-    },
-
-    // Program adherence
-    {
-      name: 'program_adherence',
-      columns: [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'program_id', type: 'TEXT' },
-        { name: 'program_day_id', type: 'TEXT' },
-        { name: 'scheduled_date', type: 'TEXT' },
-        { name: 'status', type: 'TEXT' },
-        { name: 'completion_percent', type: 'REAL' },
-        { name: 'exercises_completed', type: 'INTEGER' },
-        { name: 'exercises_scheduled', type: 'INTEGER' },
-        { name: 'skip_reason', type: 'TEXT' },
-        { name: 'notes', type: 'TEXT' },
-        { name: 'completed_at', type: 'TEXT' },
-        { name: 'created_at', type: 'TEXT' },
-      ],
-    },
-  ],
-};
-
-// Sync rules for PowerSync
-export const SyncRules = `
-bucket_definitions:
-  # User's own data
-  user_data:
-    data:
-      - SELECT * FROM user_profiles WHERE user_id = token_parameters.user_id
-      - SELECT * FROM workouts WHERE user_id = token_parameters.user_id
-      - SELECT * FROM workout_sets WHERE workout_id IN (SELECT id FROM workouts WHERE user_id = token_parameters.user_id)
-      - SELECT * FROM running_activities WHERE user_id = token_parameters.user_id
-      - SELECT * FROM readiness_check_ins WHERE user_id = token_parameters.user_id
-      - SELECT * FROM personal_records WHERE user_id = token_parameters.user_id
-      - SELECT * FROM user_badges WHERE user_id = token_parameters.user_id
-      - SELECT * FROM user_streaks WHERE user_id = token_parameters.user_id
-      - SELECT * FROM running_shoes WHERE user_id = token_parameters.user_id
-      - SELECT * FROM training_calendar WHERE user_id = token_parameters.user_id
-      - SELECT * FROM program_adherence WHERE user_id = token_parameters.user_id
-
-  # Shared read-only data
-  shared_data:
-    data:
-      - SELECT id, name, description, instructions, primary_muscle, secondary_muscles, movement_pattern, equipment, difficulty, is_compound, is_unilateral, aliases FROM exercises
-`;
-
-// Conflict resolution strategy: Last-Write-Wins
-export const ConflictResolution = {
-  strategy: 'last-write-wins',
-  timestampColumn: 'updated_at',
-};
-
-// Hook to check sync status
-export function useSyncStatus(db: AbstractPowerSyncDatabase | null) {
-  // Would return sync status for UI indicator
-  return {
-    isConnected: false,
-    isSyncing: false,
-    lastSyncedAt: null,
-    pendingChanges: 0,
-  };
+// Type for conflict records with updated_at field
+interface ConflictRecord {
+  updated_at?: string;
+  [key: string]: any;
 }
 
-// Export types
-export type SyncStatus = {
-  isConnected: boolean;
-  isSyncing: boolean;
-  lastSyncedAt: Date | null;
-  pendingChanges: number;
-};
+interface Conflict {
+  local?: ConflictRecord;
+  remote?: ConflictRecord;
+}
+
+// Conflict resolution: last-write-wins based on updated_at timestamp
+export function resolveConflict(conflict: Conflict): ConflictRecord | undefined {
+  const local = conflict.local;
+  const remote = conflict.remote;
+
+  // If both have updated_at, use last-write-wins
+  if (local?.updated_at && remote?.updated_at) {
+    const localTime = new Date(local.updated_at).getTime();
+    const remoteTime = new Date(remote.updated_at).getTime();
+
+    return remoteTime >= localTime ? remote : local;
+  }
+
+  // Default to remote if no timestamps
+  return remote;
+}
+
+// PowerSync backend connector
+class SupabasePowerSyncConnector implements PowerSyncBackendConnector {
+  async fetchCredentials() {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      throw new Error('No session available');
+    }
+
+    const powerSyncUrl = process.env.EXPO_PUBLIC_POWERSYNC_URL;
+    if (!powerSyncUrl) {
+      throw new Error('EXPO_PUBLIC_POWERSYNC_URL not configured');
+    }
+
+    return {
+      endpoint: powerSyncUrl,
+      token: session.access_token,
+    };
+  }
+
+  async uploadData(database: any): Promise<void> {
+    const transaction = await database.getNextCrudTransaction();
+
+    if (!transaction) {
+      return;
+    }
+
+    try {
+      const ops = transaction.getCrudOperations();
+
+      for (const op of ops) {
+        const table = supabase.from(op.table);
+
+        if (op.op === 'PUT') {
+          await table.upsert(op.opData);
+        } else if (op.op === 'PATCH') {
+          await table.update(op.opData).eq('id', op.id);
+        } else if (op.op === 'DELETE') {
+          await table.delete().eq('id', op.id);
+        }
+      }
+
+      await transaction.complete();
+    } catch (error) {
+      console.error('[PowerSync] Upload error:', error);
+      throw error;
+    }
+  }
+}
+
+// Initialize PowerSync connection
+export async function initPowerSync(): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      console.warn('[PowerSync] No session available, skipping initialization');
+      return;
+    }
+
+    const powerSyncUrl = process.env.EXPO_PUBLIC_POWERSYNC_URL;
+
+    if (!powerSyncUrl) {
+      console.warn('[PowerSync] EXPO_PUBLIC_POWERSYNC_URL not configured, skipping initialization');
+      return;
+    }
+
+    const connector = new SupabasePowerSyncConnector();
+    await powerSync.connect(connector);
+    console.log('[PowerSync] Connected successfully');
+  } catch (error) {
+    console.error('[PowerSync] Initialization failed:', error);
+    // PowerSync is optional - don't throw
+  }
+}
+
+// Disconnect PowerSync
+export async function disconnectPowerSync(): Promise<void> {
+  try {
+    await powerSync.disconnect();
+    console.log('[PowerSync] Disconnected successfully');
+  } catch (error) {
+    console.error('[PowerSync] Disconnect failed:', error);
+  }
+}

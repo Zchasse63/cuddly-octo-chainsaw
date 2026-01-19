@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { CheckCircle, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import ConfettiCannon from 'react-native-confetti-cannon';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Button } from '../../src/components/ui';
 import { useOnboardingStore } from '../../src/stores/onboarding';
@@ -18,6 +19,7 @@ export default function CompleteScreen() {
   const user = useAuthStore((state) => state.user);
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const confettiRef = useRef<any>(null);
 
   // Save profile mutation
   const saveProfileMutation = api.auth.updateProfile.useMutation();
@@ -40,30 +42,32 @@ export default function CompleteScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Fire confetti after animation
+    const confettiTimeout = setTimeout(() => {
+      confettiRef.current?.start();
+    }, 500);
+
+    return () => clearTimeout(confettiTimeout);
   }, []);
 
   const handleGetStarted = async () => {
     try {
-      // Save onboarding data to profile
       if (user) {
         await saveProfileMutation.mutateAsync({
-          goals: data.goals,
           experienceLevel: data.experienceLevel || undefined,
-          trainingFrequency: data.trainingFrequency || undefined,
-          preferredEquipment: data.equipment,
+          goals: data.goals.map(g => String(g)),
+          trainingFrequency: data.trainingDaysPerWeek ? String(data.trainingDaysPerWeek) : undefined,
+          preferredEquipment: data.equipment.map(e => String(e)),
           injuries: data.limitations || undefined,
           notificationsEnabled: data.notificationsEnabled,
         });
       }
 
-      // Mark onboarding as complete
       completeOnboarding();
-
-      // Navigate to main app
       router.replace('/(tabs)');
     } catch (error) {
-      console.error('Error saving profile:', error);
-      // Still proceed even if save fails
+      console.error('[Onboarding] Failed to save profile:', error);
       completeOnboarding();
       router.replace('/(tabs)');
     }
@@ -71,6 +75,15 @@ export default function CompleteScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
+      {/* Confetti animation */}
+      <ConfettiCannon
+        ref={confettiRef}
+        count={200}
+        origin={{ x: -10, y: 0 }}
+        autoStart={false}
+        fadeOut
+      />
+
       <View
         style={{
           flex: 1,
@@ -91,12 +104,12 @@ export default function CompleteScreen() {
               width: 120,
               height: 120,
               borderRadius: 60,
-              backgroundColor: colors.status.success + '20',
+              backgroundColor: colors.semantic.success + '20',
               justifyContent: 'center',
               alignItems: 'center',
             }}
           >
-            <CheckCircle size={60} color={colors.status.success} />
+            <CheckCircle size={60} color={colors.semantic.success} />
           </View>
         </Animated.View>
 
@@ -159,22 +172,18 @@ export default function CompleteScreen() {
                   value={data.experienceLevel.charAt(0).toUpperCase() + data.experienceLevel.slice(1)}
                 />
               )}
-              {data.activityType && (
+              {data.activities.length > 0 && (
                 <SummaryItem
                   colors={colors}
-                  label="Focus"
-                  value={
-                    data.activityType === 'hybrid'
-                      ? 'Hybrid Athlete'
-                      : data.activityType.charAt(0).toUpperCase() + data.activityType.slice(1)
-                  }
+                  label="Activities"
+                  value={`${data.activities.length} selected`}
                 />
               )}
-              {data.trainingFrequency && (
+              {data.trainingDaysPerWeek && (
                 <SummaryItem
                   colors={colors}
                   label="Frequency"
-                  value={`${data.trainingFrequency} days/week`}
+                  value={`${data.trainingDaysPerWeek} days/week`}
                 />
               )}
               {data.goals.length > 0 && (

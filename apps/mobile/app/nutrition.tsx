@@ -44,7 +44,7 @@ export default function NutritionScreen() {
   const proteinGoal = goals?.targetProtein || 150;
   const carbsGoal = goals?.targetCarbohydrates || 250;
   const fatGoal = goals?.targetFat || 65;
-  const waterGoal = 8; // Default water goal
+  const waterGoal = goals?.targetWaterMl ? Math.round(goals.targetWaterMl / 250) : 8;
 
   const calories = todayNutrition?.calories || 0;
   const protein = todayNutrition?.protein || 0;
@@ -79,7 +79,7 @@ export default function NutritionScreen() {
           Nutrition
         </Text>
         <TouchableOpacity
-          onPress={() => router.push('/log-meal')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             width: 36,
             height: 36,
@@ -153,30 +153,30 @@ export default function NutritionScreen() {
         {/* Macros Row */}
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg }}>
           <MacroCard
-            icon={<Beef size={20} color="#FF6B6B" />}
+            icon={<Beef size={20} color={colors.activity.strength} />}
             label="Protein"
             value={protein}
             goal={proteinGoal}
             unit="g"
-            color="#FF6B6B"
+            color={colors.activity.strength}
             colors={colors}
           />
           <MacroCard
-            icon={<Cookie size={20} color="#FFE66D" />}
+            icon={<Cookie size={20} color={colors.activity.tempo} />}
             label="Carbs"
             value={carbs}
             goal={carbsGoal}
             unit="g"
-            color="#FFE66D"
+            color={colors.activity.tempo}
             colors={colors}
           />
           <MacroCard
-            icon={<Apple size={20} color="#4ECDC4" />}
+            icon={<Apple size={20} color={colors.activity.running} />}
             label="Fat"
             value={fat}
             goal={fatGoal}
             unit="g"
-            color="#4ECDC4"
+            color={colors.activity.running}
             colors={colors}
           />
         </View>
@@ -184,7 +184,7 @@ export default function NutritionScreen() {
         {/* Water Tracking */}
         <Card style={{ marginBottom: spacing.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md }}>
-            <Droplets size={20} color="#4ECDC4" />
+            <Droplets size={20} color={colors.activity.running} />
             <Text
               style={{
                 fontSize: fontSize.base,
@@ -237,7 +237,7 @@ export default function NutritionScreen() {
                   flex: 1,
                   height: 8,
                   borderRadius: 4,
-                  backgroundColor: i < water ? '#4ECDC4' : colors.background.tertiary,
+                  backgroundColor: i < water ? colors.activity.running : colors.background.tertiary,
                 }}
               />
             ))}
@@ -246,7 +246,7 @@ export default function NutritionScreen() {
 
         {/* Quick Actions */}
         <TouchableOpacity
-          onPress={() => router.push('/log-meal')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -271,7 +271,7 @@ export default function NutritionScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push('/nutrition-history')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -296,7 +296,7 @@ export default function NutritionScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push('/nutrition-goals')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             flexDirection: 'row',
             alignItems: 'center',

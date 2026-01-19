@@ -4,14 +4,30 @@ import { userStreaks, userBadges, badgeDefinitions } from '../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { createBadgeUnlocker } from '../services/badgeUnlocker';
 import { badgeSeedData } from '../db/seeds/badges';
+import { cache } from '../lib/upstash';
+
+// Cache TTLs (in seconds)
+const CACHE_TTL = {
+  BADGE_DEFINITIONS: 86400,  // 24 hours (static data)
+  USER_STREAKS: 300,         // 5 minutes
+  USER_BADGES: 600,          // 10 minutes
+};
 
 export const gamificationRouter = router({
-  // Get user's streaks
+  // Get user's streaks (cached for 5 minutes)
   getStreaks: protectedProcedure.query(async ({ ctx }) => {
+    const cacheKey = `user:${ctx.user.id}:streaks`;
+
+    // Check cache first
+    const cached = await cache.get<Array<typeof userStreaks.$inferSelect>>(cacheKey);
+    if (cached) return cached;
+
     const streaks = await ctx.db.query.userStreaks.findMany({
       where: eq(userStreaks.userId, ctx.user.id),
     });
 
+    // Cache the result
+    await cache.set(cacheKey, streaks, CACHE_TTL.USER_STREAKS);
     return streaks;
   }),
 
@@ -45,6 +61,8 @@ export const gamificationRouter = router({
           })
           .returning();
 
+        // Invalidate cache
+        await cache.delete(`user:${ctx.user.id}:streaks`);
         return { streak: newStreak, isNew: true, extended: true };
       }
 
@@ -84,6 +102,8 @@ export const gamificationRouter = router({
         )
         .returning();
 
+      // Invalidate cache
+      await cache.delete(`user:${ctx.user.id}:streaks`);
       return { streak: updated, isNew: false, extended };
     }),
 
@@ -141,12 +161,20 @@ export const gamificationRouter = router({
       return { badge: newBadge, isNew: true, definition };
     }),
 
-  // Get all badge definitions (for display)
+  // Get all badge definitions (for display) - cached for 24 hours
   getAllBadgeDefinitions: publicProcedure.query(async ({ ctx }) => {
+    const cacheKey = 'badge:definitions:all';
+
+    // Check cache first
+    const cached = await cache.get<Array<typeof badgeDefinitions.$inferSelect>>(cacheKey);
+    if (cached) return cached;
+
     const definitions = await ctx.db.query.badgeDefinitions.findMany({
       orderBy: [badgeDefinitions.badgeType],
     });
 
+    // Cache the result (static data - 24 hours)
+    await cache.set(cacheKey, definitions, CACHE_TTL.BADGE_DEFINITIONS);
     return definitions;
   }),
 
@@ -253,9 +281,23 @@ export const gamificationRouter = router({
     .mutation(async ({ ctx, input }) => {
       const badgeUnlocker = createBadgeUnlocker(ctx.db, ctx.user.id);
       const results = await badgeUnlocker.checkAfterWorkout(input.workoutId);
+      const earnedResults = results.filter((r) => r.earned);
+
+      // Fetch badge definitions for newly earned badges
+      const badgeIds = earnedResults.map((r) => r.badgeId);
+      const definitions = badgeIds.length > 0
+        ? await ctx.db.query.badgeDefinitions.findMany({
+            where: sql`${badgeDefinitions.id} IN (${sql.raw(badgeIds.map((id) => `'${id}'`).join(', '))})`,
+          })
+        : [];
+
+      const definitionMap = new Map(definitions.map((d: any) => [d.id, d]));
 
       return {
-        newBadges: results.filter((r) => r.earned),
+        newBadges: earnedResults.map((r) => ({
+          ...r,
+          definition: definitionMap.get(r.badgeId) || null,
+        })),
       };
     }),
 
@@ -265,9 +307,23 @@ export const gamificationRouter = router({
     .mutation(async ({ ctx, input }) => {
       const badgeUnlocker = createBadgeUnlocker(ctx.db, ctx.user.id);
       const results = await badgeUnlocker.checkAfterRun(input.activityId);
+      const earnedResults = results.filter((r) => r.earned);
+
+      // Fetch badge definitions for newly earned badges
+      const badgeIds = earnedResults.map((r) => r.badgeId);
+      const definitions = badgeIds.length > 0
+        ? await ctx.db.query.badgeDefinitions.findMany({
+            where: sql`${badgeDefinitions.id} IN (${sql.raw(badgeIds.map((id) => `'${id}'`).join(', '))})`,
+          })
+        : [];
+
+      const definitionMap = new Map(definitions.map((d: any) => [d.id, d]));
 
       return {
-        newBadges: results.filter((r) => r.earned),
+        newBadges: earnedResults.map((r) => ({
+          ...r,
+          definition: definitionMap.get(r.badgeId) || null,
+        })),
       };
     }),
 

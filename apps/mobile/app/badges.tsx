@@ -1,39 +1,57 @@
-import { View, Text, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import { useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Award, Lock, Dumbbell, PersonStanding, Flame, Zap } from 'lucide-react-native';
 import { useTheme } from '../src/theme/ThemeContext';
-import { Card } from '../src/components/ui';
 import { api } from '../src/lib/trpc';
-import { spacing, fontSize, fontWeight, borderRadius } from '../src/theme/tokens';
+import { spacing, fontSize, fontWeight, borderRadius, medalColors } from '../src/theme/tokens';
+import { BadgeDetailModal } from '../src/components/badges/BadgeDetailModal';
 
 type BadgeCategory = 'strength' | 'running' | 'streak' | 'hybrid';
 
-const categoryInfo: Record<BadgeCategory, { label: string; icon: any; color: string }> = {
-  strength: { label: 'Strength', icon: Dumbbell, color: '#FF6B6B' },
-  running: { label: 'Running', icon: PersonStanding, color: '#4ECDC4' },
-  streak: { label: 'Streaks', icon: Flame, color: '#FFE66D' },
-  hybrid: { label: 'Hybrid', icon: Zap, color: '#95E1D3' },
-};
+const getCategoryInfo = (colors: any) => ({
+  strength: { label: 'Strength', icon: Dumbbell, color: colors.activity.strength },
+  running: { label: 'Running', icon: PersonStanding, color: colors.activity.running },
+  streak: { label: 'Streaks', icon: Flame, color: colors.activity.tempo },
+  hybrid: { label: 'Hybrid', icon: Zap, color: colors.accent.teal },
+});
 
-const tierColors = {
-  bronze: '#CD7F32',
-  silver: '#C0C0C0',
-  gold: '#FFD700',
-  platinum: '#E5E4E2',
-};
+const tierColors = medalColors;
 
 export default function BadgesScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const [selectedBadge, setSelectedBadge] = useState<any>(null);
 
   // Fetch user badges
   const { data: userBadges, isLoading } = api.gamification.getBadges.useQuery();
-  const { data: badgesByCategory } = api.gamification.getBadgesByCategory.useQuery({ category: 'strength' });
+
+  // Fetch badges for all categories
+  const { data: strengthBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'strength' });
+  const { data: runningBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'running' });
+  const { data: streakBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'streak' });
+  const { data: hybridBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'hybrid' });
+
+  const badgesByCategory: Record<BadgeCategory, any[]> = {
+    strength: strengthBadges || [],
+    running: runningBadges || [],
+    streak: streakBadges || [],
+    hybrid: hybridBadges || [],
+  };
 
   const earnedBadgeIds = new Set(userBadges?.map((b: any) => b.badgeId) || []);
+  const earnedBadgesMap = new Map(userBadges?.map((b: any) => [b.badgeId, b.earnedAt]) || []);
 
   const categories: BadgeCategory[] = ['strength', 'running', 'streak', 'hybrid'];
+
+  const handleBadgePress = (badge: any, isEarned: boolean) => {
+    setSelectedBadge({
+      ...badge,
+      earned: isEarned,
+      earnedAt: earnedBadgesMap.get(badge.id),
+    });
+  };
 
   const renderBadge = (badge: any, isEarned: boolean) => {
     const tierColor = tierColors[badge.tier as keyof typeof tierColors] || colors.text.tertiary;
@@ -49,6 +67,7 @@ export default function BadgesScreen() {
         }}
       >
         <TouchableOpacity
+          onPress={() => handleBadgePress(badge, isEarned)}
           style={{
             flex: 1,
             backgroundColor: isEarned ? colors.background.secondary : colors.background.tertiary,
@@ -133,11 +152,10 @@ export default function BadgesScreen() {
           }}
         >
           {categories.map((category) => {
-            const info = categoryInfo[category];
+            const info = getCategoryInfo(colors)[category];
             const Icon = info.icon;
-            // badgesByCategory returns badges for a single category, not all categories
-            const categoryBadges = category === 'strength' && badgesByCategory ? badgesByCategory : [];
-            const earnedCount = Array.isArray(categoryBadges) ? categoryBadges.filter((b: { id: string }) => earnedBadgeIds.has(b.id)).length : 0;
+            const categoryBadges = badgesByCategory[category] || [];
+            const earnedCount = categoryBadges.filter((b: { id: string }) => earnedBadgeIds.has(b.id)).length;
 
             return (
               <View
@@ -187,12 +205,11 @@ export default function BadgesScreen() {
 
         {/* Badge Categories */}
         {categories.map((category) => {
-          const info = categoryInfo[category];
+          const info = getCategoryInfo(colors)[category];
           const Icon = info.icon;
-          // badgesByCategory returns badges for a single category (strength), not all categories
-          const categoryBadges = category === 'strength' && badgesByCategory ? badgesByCategory : [];
+          const categoryBadges = badgesByCategory[category] || [];
 
-          if (!Array.isArray(categoryBadges) || categoryBadges.length === 0) return null;
+          if (categoryBadges.length === 0) return null;
 
           return (
             <View key={category} style={{ marginBottom: spacing.xl }}>
@@ -258,6 +275,13 @@ export default function BadgesScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Badge Detail Modal */}
+      <BadgeDetailModal
+        visible={!!selectedBadge}
+        badge={selectedBadge}
+        onClose={() => setSelectedBadge(null)}
+      />
     </SafeAreaView>
   );
 }

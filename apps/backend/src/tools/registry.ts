@@ -32,7 +32,7 @@ export interface ToolContext {
 export interface ToolDefinition<TParams extends z.ZodType, TResult> {
   name: string;
   description: string;
-  parameters: TParams;
+  parameters: TParams; // Kept for backwards compatibility
   requiredRole?: UserRole;
   execute: (params: z.infer<TParams>, ctx: ToolContext) => Promise<TResult>;
 }
@@ -71,8 +71,8 @@ export function createTool<TParams extends z.ZodType, TResult>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return tool<any, any>({
           description: definition.description,
-          inputSchema: definition.parameters,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          inputSchema: definition.parameters, // AI SDK v5 uses inputSchema
+          // eslint-disable-next-line @typescript-explicitany
           execute: async (_params: any, _options?: any) => ({
             success: false as const,
             error: {
@@ -88,7 +88,7 @@ export function createTool<TParams extends z.ZodType, TResult>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return tool<any, any>({
       description: definition.description,
-      inputSchema: definition.parameters,
+      inputSchema: definition.parameters, // AI SDK v5 uses inputSchema
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (params: any, _options?: any) => {
         // Parse params through Zod to apply defaults

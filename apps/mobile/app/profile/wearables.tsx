@@ -96,9 +96,12 @@ export default function WearablesScreen() {
 
   const handleConnect = async (integrationId: string) => {
     setIsConnecting(integrationId);
-    // TODO: OAuth flow
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsConnecting(null);
+    try {
+      // OAuth flow integration pending
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } finally {
+      setIsConnecting(null);
+    }
   };
 
   const handleDisconnect = (deviceId: string) => {

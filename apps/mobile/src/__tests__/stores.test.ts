@@ -205,12 +205,13 @@ describe('Zustand Stores', () => {
     beforeEach(() => {
       useOnboardingStore.setState({
         currentStep: 0,
-        totalSteps: 8,
+        totalSteps: 10,
         data: {
           goals: [],
           experienceLevel: 'beginner',
           trainingFrequency: '3-4',
-          activityType: 'strength',
+          activities: ['weight_training'],
+          trainingDaysPerWeek: 4,
           equipment: [],
           limitations: '',
           notificationsEnabled: true,

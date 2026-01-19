@@ -38,11 +38,11 @@ interface WorkoutTemplate {
   totalDistance: number;
 }
 
-const SEGMENT_TYPES: { type: SegmentType; label: string; color: string }[] = [
-  { type: 'warmup', label: 'Warm-up', color: '#4ECDC4' },
-  { type: 'work', label: 'Work', color: '#FF6B6B' },
-  { type: 'recovery', label: 'Recovery', color: '#95E1D3' },
-  { type: 'cooldown', label: 'Cool-down', color: '#4ECDC4' },
+const getSegmentTypes = (colors: any) => [
+  { type: 'warmup' as SegmentType, label: 'Warm-up', color: colors.activity.running },
+  { type: 'work' as SegmentType, label: 'Work', color: colors.activity.strength },
+  { type: 'recovery' as SegmentType, label: 'Recovery', color: colors.activity.recovery },
+  { type: 'cooldown' as SegmentType, label: 'Cool-down', color: colors.activity.running },
 ];
 
 const PRESET_WORKOUTS: WorkoutTemplate[] = [
@@ -323,7 +323,7 @@ export default function WorkoutBuilderScreen() {
               alignItems: 'center',
             }}
           >
-            <Footprints size={20} color="#4ECDC4" />
+            <Footprints size={20} color={colors.activity.running} />
             <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary }}>
               {(getTotalDistance() / 1000).toFixed(1)}
             </Text>
@@ -338,7 +338,7 @@ export default function WorkoutBuilderScreen() {
               alignItems: 'center',
             }}
           >
-            <Zap size={20} color="#FF6B6B" />
+            <Zap size={20} color={colors.activity.strength} />
             <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary }}>
               {segments.filter((s) => s.type === 'work').length}
             </Text>
@@ -359,7 +359,7 @@ export default function WorkoutBuilderScreen() {
         </Text>
 
         {segments.map((segment, index) => {
-          const segmentType = SEGMENT_TYPES.find((t) => t.type === segment.type);
+          const segmentType = getSegmentTypes(colors).find((t) => t.type === segment.type);
           return (
             <Card key={segment.id} style={{ marginBottom: spacing.sm }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -463,7 +463,7 @@ export default function WorkoutBuilderScreen() {
 
         {/* Add Segment Buttons */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm }}>
-          {SEGMENT_TYPES.map((type) => (
+          {getSegmentTypes(colors).map((type) => (
             <TouchableOpacity
               key={type.type}
               onPress={() => addSegment(type.type)}

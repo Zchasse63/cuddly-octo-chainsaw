@@ -2,6 +2,14 @@ import { z } from 'zod';
 import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { exercises } from '../db/schema';
 import { eq, ilike, or, sql } from 'drizzle-orm';
+import { cache } from '../lib/upstash';
+
+// Cache TTLs (in seconds)
+const CACHE_TTL = {
+  EXERCISE_BY_ID: 1800,        // 30 minutes
+  EXERCISES_BY_MUSCLE: 3600,   // 1 hour
+  FORM_TIPS: 86400,            // 24 hours
+};
 
 export const exerciseRouter = router({
   // List all exercises with optional filtering
@@ -45,10 +53,16 @@ export const exerciseRouter = router({
       return results;
     }),
 
-  // Get single exercise by ID
+  // Get single exercise by ID (cached for 30 minutes)
   byId: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      const cacheKey = `exercise:${input.id}`;
+
+      // Check cache first
+      const cached = await cache.get<typeof exercises.$inferSelect>(cacheKey);
+      if (cached) return cached;
+
       const exercise = await ctx.db.query.exercises.findFirst({
         where: eq(exercises.id, input.id),
       });
@@ -57,6 +71,8 @@ export const exerciseRouter = router({
         throw new Error('Exercise not found');
       }
 
+      // Cache the result
+      await cache.set(cacheKey, exercise, CACHE_TTL.EXERCISE_BY_ID);
       return exercise;
     }),
 
@@ -121,7 +137,7 @@ export const exerciseRouter = router({
       return exercise;
     }),
 
-  // Get exercises by muscle group
+  // Get exercises by muscle group (cached for 1 hour)
   byMuscleGroup: publicProcedure
     .input(
       z.object({
@@ -133,10 +149,20 @@ export const exerciseRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      return ctx.db.query.exercises.findMany({
+      const cacheKey = `exercises:muscle:${input.muscleGroup}`;
+
+      // Check cache first
+      const cached = await cache.get<Array<typeof exercises.$inferSelect>>(cacheKey);
+      if (cached) return cached;
+
+      const results = await ctx.db.query.exercises.findMany({
         where: eq(exercises.primaryMuscle, input.muscleGroup),
         orderBy: (exercises, { asc }) => [asc(exercises.name)],
       });
+
+      // Cache the result
+      await cache.set(cacheKey, results, CACHE_TTL.EXERCISES_BY_MUSCLE);
+      return results;
     }),
 
   // Get exercise suggestions for substitution
@@ -165,5 +191,73 @@ export const exerciseRouter = router({
           ),
         limit: input.limit,
       });
+    }),
+
+  // Get form tips for an exercise (cached for 24 hours)
+  getFormTips: publicProcedure
+    .input(
+      z.object({
+        exerciseId: z.string().uuid(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const cacheKey = `exercise:formtips:${input.exerciseId}`;
+
+      // Check cache first
+      type FormTipsResult = {
+        exerciseId: string;
+        exerciseName: string;
+        tips: Array<{ phase: string; cue: string }>;
+      };
+      const cached = await cache.get<FormTipsResult>(cacheKey);
+      if (cached) return cached;
+
+      const exercise = await ctx.db.query.exercises.findFirst({
+        where: eq(exercises.id, input.exerciseId),
+      });
+
+      if (!exercise) {
+        throw new Error('Exercise not found');
+      }
+
+      // Fetch exercise cues from database
+      const cues = await ctx.db.query.exerciseCues.findMany({
+        where: (exerciseCues, { eq }) => eq(exerciseCues.exerciseId, input.exerciseId),
+      });
+
+      let result: FormTipsResult;
+
+      // Return exercise-specific cues or fallback to generic tips
+      if (cues.length > 0) {
+        result = {
+          exerciseId: input.exerciseId,
+          exerciseName: exercise.name,
+          tips: cues.map(c => ({
+            phase: c.cueType,
+            cue: c.cueText,
+          })),
+        };
+      } else {
+        // Fallback: generate generic form tips based on exercise type
+        const genericTips = [];
+        if (exercise.isCompound) {
+          genericTips.push({ phase: 'setup', cue: 'Maintain a neutral spine throughout the movement' });
+          genericTips.push({ phase: 'execution', cue: 'Engage your core and breathe with each rep' });
+        }
+        if (exercise.isUnilateral) {
+          genericTips.push({ phase: 'setup', cue: 'Keep your body stable and avoid rotation' });
+        }
+        genericTips.push({ phase: 'execution', cue: 'Control the weight through the full range of motion' });
+
+        result = {
+          exerciseId: input.exerciseId,
+          exerciseName: exercise.name,
+          tips: genericTips,
+        };
+      }
+
+      // Cache the result
+      await cache.set(cacheKey, result, CACHE_TTL.FORM_TIPS);
+      return result;
     }),
 });

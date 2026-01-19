@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { router, protectedProcedure } from '../trpc';
+import { router, protectedProcedure, aiRateLimitedProcedure } from '../trpc';
 import { observable } from '@trpc/server/observable';
 import {
   classifyMessage,
@@ -30,8 +30,9 @@ export const coachRouter = router({
   /**
    * Main message endpoint - handles ALL chat interactions
    * This is the primary endpoint the chat UI should use
+   * Rate limited to 20 requests/hour per user (AI operations are expensive)
    */
-  message: protectedProcedure
+  message: aiRateLimitedProcedure
     .input(
       z.object({
         content: z.string().min(1),
@@ -212,8 +213,8 @@ export const coachRouter = router({
       return classifyMessage(input.message);
     }),
 
-  // Chat with AI coach
-  chat: protectedProcedure
+  // Chat with AI coach (legacy - rate limited)
+  chat: aiRateLimitedProcedure
     .input(
       z.object({
         message: z.string().min(1),
@@ -378,8 +379,8 @@ export const coachRouter = router({
 
   // ============ RAG-ENHANCED ENDPOINTS ============
 
-  // RAG-enhanced chat with knowledge retrieval
-  ragChat: protectedProcedure
+  // RAG-enhanced chat with knowledge retrieval (rate limited)
+  ragChat: aiRateLimitedProcedure
     .input(
       z.object({
         message: z.string().min(1),

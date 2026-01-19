@@ -75,7 +75,7 @@ export default function ProgramQuestionnaireScreen() {
   // Generate program mutation using calendar.submitQuestionnaire
   const generateMutation = api.calendar.submitQuestionnaire.useMutation({
     onSuccess: (result) => {
-      router.replace(`/program-detail?id=${result.programId}`);
+      router.replace(`/program/${result.programId}` as any);
     },
   });
 

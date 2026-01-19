@@ -16,12 +16,13 @@ export default function OnboardingLayout() {
     >
       <Stack.Screen name="index" />
       <Stack.Screen name="goals" />
-      <Stack.Screen name="experience" />
-      <Stack.Screen name="frequency" />
       <Stack.Screen name="activities" />
       <Stack.Screen name="equipment" />
+      <Stack.Screen name="experience" />
+      <Stack.Screen name="frequency" />
       <Stack.Screen name="limitations" />
       <Stack.Screen name="notifications" />
+      <Stack.Screen name="voice-tutorial" />
       <Stack.Screen name="complete" />
     </Stack>
   );

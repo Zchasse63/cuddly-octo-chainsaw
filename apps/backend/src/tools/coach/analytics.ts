@@ -18,7 +18,7 @@ import {
 // Tool 53: Get Client Analytics Summary
 export const getClientAnalyticsSummary = createTool({
   name: 'getClientAnalyticsSummary',
-  description: 'Get analytics summary for a specific client',
+  description: 'Get analytics summary for a specific client. Use this when the coach asks "how is [client] doing", "show me [client]\'s stats", "what is [client]\'s training volume", or when analyzing client progress and engagement.',
   parameters: z.object({
     clientId: z.string().uuid().describe('Client user ID'),
     days: z.number().min(7).max(90).default(30),

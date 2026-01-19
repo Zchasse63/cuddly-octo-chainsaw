@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import { api, createTRPCClient } from '../src/lib/trpc';
 import { useAuthStore } from '../src/stores/auth';
+import { initPowerSync } from '../src/lib/powersync';
 
 // Create query client
 const queryClient = new QueryClient({
@@ -25,13 +26,18 @@ function RootLayoutNav() {
   const { isDark, colors } = useTheme();
   const initialize = useAuthStore((state) => state.initialize);
   const isInitialized = useAuthStore((state) => state.isInitialized);
+  const session = useAuthStore((state) => state.session);
 
-  // Initialize auth on mount
   useEffect(() => {
     initialize();
   }, []);
 
-  // Wait for auth to initialize
+  useEffect(() => {
+    if (session) {
+      initPowerSync();
+    }
+  }, [session]);
+
   if (!isInitialized) {
     return null;
   }

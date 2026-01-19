@@ -7,7 +7,7 @@ import { xai, TEMPERATURES, GROK_MODELS, MODELS } from '../ai';
  * Tests real xAI API calls using Vercel AI SDK
  */
 
-const AI_TIMEOUT = 30000; // 30s for AI calls
+const AI_TIMEOUT = 90000; // 90s for AI calls (increased for Grok API stability)
 
 describe('AI SDK Client', () => {
   describe('Configuration', () => {

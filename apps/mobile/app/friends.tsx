@@ -36,8 +36,7 @@ export default function FriendsScreen() {
   // Fetch friend requests
   const { data: requests, refetch: refetchRequests } = api.social.getPendingRequests.useQuery();
 
-  // Search users - TODO: implement user search in backend
-  // For now, search results will be empty
+  // Search users - Note: backend user search endpoint not yet implemented
   const searchResults: Array<{ id: string; name: string; hasPendingRequest: boolean }> = [];
 
   // Send friend request mutation
@@ -72,7 +71,7 @@ export default function FriendsScreen() {
 
   const renderFriend = ({ item }: { item: any }) => (
     <TouchableOpacity
-      onPress={() => router.push(`/profile/${item.userId}`)}
+      onPress={() => router.push(`/(tabs)/profile` as any)}
     >
       <Card style={{ marginBottom: spacing.sm }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>

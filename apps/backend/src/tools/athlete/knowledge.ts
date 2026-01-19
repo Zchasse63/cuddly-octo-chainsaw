@@ -59,7 +59,7 @@ export const searchKnowledgeBase = createTool({
 // Tool 32: Get Exercise Form Tips
 export const getExerciseFormTips = createTool({
   name: 'getExerciseFormTips',
-  description: 'Get form cues and tips for a specific exercise',
+  description: 'Get form cues and tips for a specific exercise. Use this when the user asks "how do I perform squats correctly", "what are form cues for bench press", "show me tips for deadlifts", "how to improve my overhead press form", or when providing exercise technique guidance.',
   parameters: z.object({
     exerciseId: z.string().uuid().optional().describe('Exercise ID'),
     exerciseName: z.string().optional().describe('Exercise name (if ID not known)'),

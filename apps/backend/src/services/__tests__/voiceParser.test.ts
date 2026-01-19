@@ -24,7 +24,7 @@ describe('VoiceParser (Real API)', () => {
       expect(result.weight_unit).toBe('lbs');
       expect(result.reps).toBe(8);
       expect(result.confidence).toBeGreaterThan(0.7); // Should be confident
-    }, 30000);
+    }, 90000);
 
     it('should correctly parse squat with weight and reps', async () => {
       const result = await parseVoiceCommand('squat 225 for 5 reps');
@@ -33,7 +33,7 @@ describe('VoiceParser (Real API)', () => {
       expect(result.weight).toBe(225);
       expect(result.reps).toBe(5);
       expect(result.confidence).toBeGreaterThan(0.7);
-    }, 30000);
+    }, 90000);
 
     it('should correctly parse deadlift with pounds specified', async () => {
       const result = await parseVoiceCommand('deadlift 315 pounds for 3 reps');
@@ -43,7 +43,7 @@ describe('VoiceParser (Real API)', () => {
       expect(result.weight_unit).toBe('lbs');
       expect(result.reps).toBe(3);
       expect(result.confidence).toBeGreaterThan(0.7);
-    }, 30000);
+    }, 90000);
 
     it('should handle partial data - reps only, no weight', async () => {
       const result = await parseVoiceCommand('I did squats for 10 reps');
@@ -52,7 +52,7 @@ describe('VoiceParser (Real API)', () => {
       expect(result.reps).toBe(10);
       expect(result.weight).toBeNull(); // No weight mentioned
       expect(result.confidence).toBeGreaterThan(0.5); // Lower confidence is ok for partial data
-    }, 30000);
+    }, 90000);
 
     it('should use context for "same weight" command', async () => {
       const result = await parseVoiceCommand('same weight for 5 reps', {
@@ -64,7 +64,7 @@ describe('VoiceParser (Real API)', () => {
       expect(result.weight).toBe(405);
       expect(result.weight_unit).toBe('lbs');
       expect(result.reps).toBe(5);
-    }, 30000);
+    }, 90000);
 
     it('should parse kg units correctly', async () => {
       const result = await parseVoiceCommand('bench press 100 kg for 6 reps');
@@ -74,7 +74,7 @@ describe('VoiceParser (Real API)', () => {
       expect(result.weight_unit).toBe('kg');
       expect(result.reps).toBe(6);
       expect(result.confidence).toBeGreaterThan(0.7);
-    }, 30000);
+    }, 90000);
 
     it('should parse sets when mentioned', async () => {
       const result = await parseVoiceCommand('3 sets of 10 reps at 135 pounds on bench');
@@ -83,7 +83,7 @@ describe('VoiceParser (Real API)', () => {
       expect(result.reps).toBe(10);
       expect(result.weight).toBe(135);
       expect(result.exercise_name?.toLowerCase()).toContain('bench');
-    }, 30000);
+    }, 90000);
 
     it('should parse RPE when mentioned', async () => {
       const result = await parseVoiceCommand('squat 315 for 5 reps RPE 8');
@@ -92,14 +92,14 @@ describe('VoiceParser (Real API)', () => {
       expect(result.weight).toBe(315);
       expect(result.reps).toBe(5);
       expect(result.rpe).toBe(8);
-    }, 30000);
+    }, 90000);
 
     it('should have low confidence for unclear commands', async () => {
       const result = await parseVoiceCommand('did some stuff today');
 
       // Unclear command should have low confidence or null values
       expect(result.confidence).toBeLessThan(0.5);
-    }, 30000);
+    }, 90000);
   });
 
   describe('generateConfirmation', () => {

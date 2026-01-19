@@ -13,7 +13,7 @@ import { dailyWorkoutAnalytics, weeklyAnalytics, exerciseAnalytics } from '../..
 // Tool 34: Get Volume Analytics
 export const getVolumeAnalytics = createTool({
   name: 'getVolumeAnalytics',
-  description: 'Get training volume analytics and muscle group distribution',
+  description: 'Get training volume analytics and muscle group distribution. Use this when the user asks "how much volume am I doing", "what muscle groups am I training", "show my training distribution", or when analyzing training balance and volume trends.',
   parameters: z.object({
     days: z.number().min(7).max(90).default(30).describe('Number of days to analyze'),
   }),
@@ -77,7 +77,7 @@ export const getVolumeAnalytics = createTool({
 // Tool 35: Get Progress Trends
 export const getProgressTrends = createTool({
   name: 'getProgressTrends',
-  description: 'Get progress trends for specific exercises or overall training',
+  description: 'Get progress trends for specific exercises or overall training. Use this when the user asks "am I getting stronger", "show my progress", "how am I improving", or when analyzing strength gains and training progression over time.',
   parameters: z.object({
     exerciseId: z.string().uuid().optional().describe('Specific exercise ID'),
     weeks: z.number().min(4).max(52).default(12).describe('Number of weeks to analyze'),

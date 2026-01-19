@@ -13,11 +13,12 @@
 
 import { createXai } from '@ai-sdk/xai';
 import {
-  generateText,
+  generateText as aiGenerateText,
   streamText,
   generateObject,
   tool,
   wrapLanguageModel,
+  stepCountIs,
   type LanguageModel,
 } from 'ai';
 import { z } from 'zod';
@@ -131,8 +132,9 @@ export function withLogging(model: LanguageModel): any {
 
 // Model configuration
 export const AI_CONFIG = {
-  // Primary model for tool calling with reasoning (Responses API)
-  responses: xai.responses(MODELS.reasoning),
+  // Primary model for tool calling with reasoning (Chat Completions API)
+  // NOTE: Use reasoning model, NOT responses API - responses is for built-in tools only
+  responses: xai(MODELS.reasoning),
 
   // Chat model for simple completions (grok-4-fast)
   chat: xai(MODELS.fast),
@@ -208,8 +210,81 @@ export function getModelWithLogging(complexity: TaskComplexity = 'moderate') {
 export type AIConfig = typeof AI_CONFIG;
 
 // Re-export Vercel AI SDK utilities
-export { generateText, streamText, generateObject, tool };
+// Re-export core functions (note: generateText and streamText are NOT wrapped with retry by default)
+// For retry-wrapped versions with tool calling support, use the custom wrappers below
+export { streamText, generateObject, tool, stepCountIs };
+
+/**
+ * Retry-wrapped generateText for tool calling scenarios.
+ *
+ * This wrapper addresses Grok AI inconsistencies:
+ * 1. Occasionally times out or returns errors during tool calls
+ * 2. Network failures during multi-step tool execution
+ *
+ * Retry logic: 5 attempts with exponential backoff + jitter
+ * Note: Empty text after tool calls is a known Grok behavior - handled by service layer fallbacks
+ */
+export async function generateText(params: Parameters<typeof aiGenerateText>[0]): Promise<Awaited<ReturnType<typeof aiGenerateText>>> {
+  return withRetry(async () => {
+    const result = await aiGenerateText(params);
+    return result;
+  }, 'generateText');
+}
 export { z };
+
+/**
+ * Retry configuration for AI calls
+ * Increased to 5 retries for better test stability with Grok AI inconsistency
+ */
+const RETRY_CONFIG = {
+  maxRetries: 5,
+  baseDelayMs: 2000, // Start with 2s
+  maxDelayMs: 10000, // Cap at 10s
+  jitterMs: 500, // Add random jitter to prevent thundering herd
+} as const;
+
+/**
+ * Execute with exponential backoff retry logic
+ * Helps handle Grok AI model inconsistency (0 tool calls, timeouts)
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  operation: string = 'AI operation'
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+
+      // Don't retry on final attempt
+      if (attempt === RETRY_CONFIG.maxRetries) {
+        break;
+      }
+
+      // Calculate delay with exponential backoff + jitter: 2s, 4s, 8s (+ random jitter)
+      const baseDelay = Math.min(
+        RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
+        RETRY_CONFIG.maxDelayMs
+      );
+      // Add random jitter to prevent thundering herd
+      const jitter = Math.random() * RETRY_CONFIG.jitterMs;
+      const delayMs = baseDelay + jitter;
+
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn(`[AI Retry] ${operation} failed (attempt ${attempt + 1}/${RETRY_CONFIG.maxRetries + 1}), retrying in ${Math.floor(delayMs)}ms...`, {
+          error: lastError.message,
+        });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError;
+}
 
 /**
  * Generate text with the standard configuration.
@@ -328,21 +403,25 @@ export async function generateCompletion(params: {
     selectedModel = getModelForTask(complexity);
   }
 
-  const { text } = await generateText({
-    model: selectedModel,
-    system: systemPrompt,
-    prompt: userPrompt,
-    temperature,
-    maxOutputTokens: maxTokens,
-  });
+  // Wrap in retry logic to handle Grok API inconsistency
+  return withRetry(async () => {
+    const { text } = await generateText({
+      model: selectedModel,
+      system: systemPrompt,
+      prompt: userPrompt,
+      temperature,
+      maxOutputTokens: maxTokens,
+    });
 
-  return text;
+    return text;
+  }, 'generateCompletion');
 }
 
 /**
  * Stream completion - standard interface for services.
  * Returns an async generator that yields text chunks.
  * Supports both explicit model selection and task complexity routing.
+ * Wrapped with retry logic to handle Grok API timeouts and failures.
  */
 export async function* streamCompletion(params: {
   systemPrompt: string;
@@ -369,16 +448,53 @@ export async function* streamCompletion(params: {
     selectedModel = getModelForTask(complexity);
   }
 
-  const result = streamText({
-    model: selectedModel,
-    system: systemPrompt,
-    prompt: userPrompt,
-    temperature,
-    maxOutputTokens: maxTokens,
-  });
+  // Wrap streaming call in retry logic
+  let lastError: Error | null = null;
 
-  for await (const chunk of result.textStream) {
-    yield chunk;
+  for (let attempt = 0; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+    try {
+      const result = streamText({
+        model: selectedModel,
+        system: systemPrompt,
+        prompt: userPrompt,
+        temperature,
+        maxOutputTokens: maxTokens,
+      });
+
+      // Stream successfully started, yield chunks
+      for await (const chunk of result.textStream) {
+        yield chunk;
+      }
+
+      // If we got here, streaming completed successfully
+      return;
+    } catch (error) {
+      lastError = error as Error;
+
+      // Don't retry on final attempt
+      if (attempt === RETRY_CONFIG.maxRetries) {
+        break;
+      }
+
+      // Calculate delay with exponential backoff + jitter
+      const baseDelay = Math.min(
+        RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
+        RETRY_CONFIG.maxDelayMs
+      );
+      const jitter = Math.random() * RETRY_CONFIG.jitterMs;
+      const delayMs = baseDelay + jitter;
+
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn(`[AI Stream Retry] streamCompletion failed (attempt ${attempt + 1}/${RETRY_CONFIG.maxRetries + 1}), retrying in ${Math.floor(delayMs)}ms...`, {
+          error: lastError.message,
+        });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
   }
+
+  // If all retries exhausted, throw the last error
+  throw lastError;
 }
 

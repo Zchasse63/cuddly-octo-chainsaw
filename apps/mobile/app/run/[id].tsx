@@ -21,15 +21,18 @@ import { api } from '../../src/lib/trpc';
 import { useDistanceUnit, formatDistance, formatPace, formatDuration } from '../../src/stores/profile';
 import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
 
-const runTypeColors: Record<string, string> = {
-  easy: '#4ECDC4',
-  tempo: '#FFE66D',
-  interval: '#FF6B6B',
-  long_run: '#95E1D3',
-  recovery: '#A8E6CF',
-  fartlek: '#DDA0DD',
-  hill: '#F4A460',
-  race: '#FFD700',
+const getRunTypeColor = (runType: string, colors: any): string => {
+  const map: Record<string, string> = {
+    easy: colors.activity.running,
+    tempo: colors.activity.tempo,
+    interval: colors.activity.interval,
+    long_run: colors.activity.running,
+    recovery: colors.activity.recovery,
+    fartlek: colors.accent.purple,
+    hill: colors.accent.orange,
+    race: colors.accent.yellow,
+  };
+  return map[runType] || colors.text.tertiary;
 };
 
 const runTypeLabels: Record<string, string> = {
@@ -113,7 +116,7 @@ export default function RunDetailScreen() {
     );
   }
 
-  const typeColor = runTypeColors[run.runType ?? 'easy'] || colors.accent.blue;
+  const typeColor = getRunTypeColor(run.runType ?? 'easy', colors);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
@@ -219,7 +222,7 @@ export default function RunDetailScreen() {
           {run.avgHeartRate && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <Heart size={20} color="#FF6B6B" />
+                <Heart size={20} color={colors.semantic.error} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
                   {run.avgHeartRate}
                 </Text>
@@ -237,7 +240,7 @@ export default function RunDetailScreen() {
           {run.avgCadence && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <Activity size={20} color="#4ECDC4" />
+                <Activity size={20} color={colors.activity.running} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
                   {run.avgCadence}
                 </Text>
@@ -251,7 +254,7 @@ export default function RunDetailScreen() {
           {run.elevationGainMeters && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <TrendingUp size={20} color="#FFE66D" />
+                <TrendingUp size={20} color={colors.accent.yellow} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
                   {Math.round(run.elevationGainMeters)}
                 </Text>
@@ -265,7 +268,7 @@ export default function RunDetailScreen() {
           {run.caloriesBurned && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <Zap size={20} color="#FF9500" />
+                <Zap size={20} color={colors.accent.orange} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
                   {run.caloriesBurned}
                 </Text>

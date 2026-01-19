@@ -231,7 +231,7 @@ export default function PersonalRecordsScreen() {
         {(category === 'all' || category === 'running') && (
           <>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-              <PersonStanding size={20} color="#4ECDC4" />
+              <PersonStanding size={20} color={colors.activity.running} />
               <Text
                 style={{
                   fontSize: fontSize.lg,
@@ -253,13 +253,13 @@ export default function PersonalRecordsScreen() {
                         width: 48,
                         height: 48,
                         borderRadius: 24,
-                        backgroundColor: '#4ECDC420',
+                        backgroundColor: colors.activity.running + '20',
                         justifyContent: 'center',
                         alignItems: 'center',
                         marginRight: spacing.md,
                       }}
                     >
-                      <Trophy size={24} color="#4ECDC4" />
+                      <Trophy size={24} color={colors.activity.running} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text

@@ -62,5 +62,8 @@ export * from './coach';
 // Injury tracking schemas
 export * from './injuries';
 
+// Scheduling schemas
+export * from './scheduling';
+
 // Alias for backwards compatibility with tests
 export { trainingPrograms as generatedPrograms } from './programs';

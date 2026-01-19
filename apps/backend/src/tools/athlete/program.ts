@@ -13,7 +13,7 @@ import { trainingPrograms, programWeeks, programDays, programExercises } from '.
 // Tool 14: Get Active Program
 export const getActiveProgram = createTool({
   name: 'getActiveProgram',
-  description: 'Get the user\'s currently active training program with overview',
+  description: 'Get the user\'s currently active training program with overview. Use this when the user asks "what program am I on", "show my current program", "what is my training plan", or when providing program context and adherence information.',
   parameters: z.object({}),
   execute: async (_params, ctx) => {
     const program = await ctx.db.query.trainingPrograms.findFirst({
@@ -50,7 +50,7 @@ export const getActiveProgram = createTool({
 // Tool 15: Get Program Progress
 export const getProgramProgress = createTool({
   name: 'getProgramProgress',
-  description: 'Get detailed progress for the active training program',
+  description: 'Get detailed progress for the active training program. Use this when the user asks "how is my program going", "show my program progress", "am I staying on track", or when analyzing program adherence and completion rates.',
   parameters: z.object({}),
   requiredRole: 'premium',
   execute: async (_params, ctx) => {

@@ -13,7 +13,7 @@ import { userProfiles, userStreaks, userBadges } from '../../db/schema';
 // Tool 1: Get User Profile
 export const getUserProfile = createTool({
   name: 'getUserProfile',
-  description: 'Get the current user profile including goals, experience level, injuries, and training preferences',
+  description: 'Get the current user profile including goals, experience level, injuries, and training preferences. Use this when the user asks about their profile, goals, experience, tier, or when you need to personalize recommendations based on their fitness level.',
   parameters: z.object({}),
   execute: async (_params, ctx) => {
     const profile = await ctx.db.query.userProfiles.findFirst({
@@ -40,7 +40,7 @@ export const getUserProfile = createTool({
 // Tool 2: Get User Preferences
 export const getUserPreferences = createTool({
   name: 'getUserPreferences',
-  description: 'Get user training preferences including weight unit, available equipment, and favorite exercises',
+  description: 'Get user SETTINGS and PREFERENCES only (weight unit, theme, notification settings, equipment the user OWNS). Use this when the user asks "what equipment do I have/own", "what is my preferred unit", "what are my settings". This tool returns USER CONFIGURATION, not exercise data. For finding/searching exercises, use searchExercises instead.',
   parameters: z.object({}),
   execute: async (_params, ctx) => {
     const profile = await ctx.db.query.userProfiles.findFirst({
@@ -65,7 +65,7 @@ export const getUserPreferences = createTool({
 // Tool 3: Get Active Injuries
 export const getActiveInjuries = createTool({
   name: 'getActiveInjuries',
-  description: 'Get list of currently active injuries the user has logged',
+  description: 'Get list of currently active injuries the user has logged. Use this when the user asks "do I have any injuries", "what are my current injuries", "what body parts should I avoid", or when you need to check for injury constraints before recommending exercises.',
   parameters: z.object({}),
   execute: async (_params, ctx) => {
     const profile = await ctx.db.query.userProfiles.findFirst({
@@ -87,7 +87,7 @@ export const getActiveInjuries = createTool({
 // Tool 4: Get User Streaks
 export const getUserStreaks = createTool({
   name: 'getUserStreaks',
-  description: 'Get current workout and logging streaks',
+  description: 'Get current workout and logging streaks. Use this when the user asks "what is my streak", "how many days in a row have I worked out", "what is my longest streak", or when you need to show consistency metrics and motivational progress.',
   parameters: z.object({}),
   execute: async (_params, ctx) => {
     const streaks = await ctx.db.query.userStreaks.findMany({
@@ -121,7 +121,7 @@ export const getUserStreaks = createTool({
 // Tool 5: Get User Badges
 export const getUserBadges = createTool({
   name: 'getUserBadges',
-  description: 'Get earned badges and achievements',
+  description: 'Get earned badges and achievements. Use this when the user asks "what badges have I earned", "show my achievements", "what milestones have I hit", or when you need to display gamification progress and rewards.',
   parameters: z.object({
     category: z.enum(['strength', 'running', 'streak', 'milestone', 'all']).default('all')
       .describe('Filter badges by category'),

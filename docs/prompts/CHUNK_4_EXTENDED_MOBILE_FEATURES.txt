@@ -1,0 +1,342 @@
+Complete CHUNK 4: Extended Mobile Features for VoiceFit 2.0.
+
+Reference the full audit at docs/audits/FULL_PROJECT_AUDIT.md for context.
+Reference docs/UI_SPECIFICATION.md for all styling guidelines.
+
+This chunk adds secondary screens that enhance the core mobile experience.
+
+## PROJECT STRUCTURE
+
+Mobile app: apps/mobile/
+- Tab screens at apps/mobile/app/(tabs)/
+- Stack screens at apps/mobile/app/ (e.g., workout/[id].tsx, program/[id].tsx)
+- Components at apps/mobile/src/components/
+- Hooks at apps/mobile/src/hooks/
+- Stores at apps/mobile/src/stores/
+- Theme at apps/mobile/src/theme/tokens.ts
+- tRPC client at apps/mobile/src/lib/trpc.ts
+
+Backend routers at apps/backend/src/routers/ - use existing tRPC endpoints.
+
+## TASK 4.1: Training Calendar
+
+### CalendarScreen
+Create apps/mobile/app/calendar.tsx:
+```typescript
+// Weekly calendar view for scheduled workouts
+// Features:
+// - 7-day horizontal week view with date circles
+// - Each day shows workout type icon (weights, running, rest)
+// - Status colors: completed (green), scheduled (blue), missed (red), rest (gray)
+// - Tap day to open DayDetailSheet
+// - Swipe left/right to navigate weeks
+// - Header shows current week range (e.g., "Jan 13 - Jan 19")
+```
+
+### DayDetailSheet Component
+Create apps/mobile/src/components/calendar/DayDetailSheet.tsx:
+```typescript
+// Bottom sheet showing workout details for selected day
+// Data from api.calendar.getDay
+// Features:
+// - Date header with day of week
+// - Workout card with name, exercises, estimated duration
+// - "Start Workout" button (navigates to workout tab with preload)
+// - "Reschedule" option that opens date picker
+// - "Skip" option that marks as skipped
+// - Empty state for rest days
+```
+
+### Reschedule Functionality
+- Use date picker to select new date
+- Call api.calendar.reschedule mutation
+- Animate workout card moving to new date
+
+## TASK 4.2: Program Management
+
+### ProgramsScreen
+Create apps/mobile/app/programs.tsx:
+```typescript
+// Tab view: Active | Completed | Discover
+// Features:
+// - Active tab: Current program with progress ring, week indicator
+// - Completed tab: List of finished programs with completion dates
+// - Discover tab: AI-generated program suggestions based on goals
+// - Floating "Create Program" button
+// Data: api.program.listUserPrograms, api.program.getTemplates
+```
+
+### ProgramDetailScreen
+Create apps/mobile/app/program/[id].tsx:
+```typescript
+// Detailed program view
+// Data from api.program.getById
+// Features:
+// - Header with program name, duration, days/week
+// - Progress bar showing weeks completed
+// - Adherence percentage
+// - Week-by-week breakdown with expand/collapse
+// - Each day shows workout type, exercises, completion status
+// - "Start Next Workout" button
+```
+
+### ProgramQuestionnaireScreen
+Create apps/mobile/app/program-questionnaire.tsx:
+```typescript
+// Multi-step form for AI program generation
+// Steps:
+// 1. Goal selection (strength, hypertrophy, endurance, fat loss)
+// 2. Experience level (beginner, intermediate, advanced)
+// 3. Days per week (2-6)
+// 4. Equipment available (multi-select)
+// 5. Time per workout (30/45/60/90 min)
+// 6. Focus areas (optional muscle groups)
+// Submit calls api.program.generateAI
+// Shows loading animation during generation
+// Navigates to program detail on success
+```
+
+## TASK 4.3: Analytics & Progress
+
+### AnalyticsScreen
+Create apps/mobile/app/analytics.tsx:
+```typescript
+// Dashboard with training insights
+// Features:
+// - VolumeChart: Line chart showing weekly volume trend
+// - MuscleGroupBreakdown: Pie chart of volume by muscle
+// - WeeklyComparison: This week vs last week stats
+// - Consistency score (workouts completed / planned)
+// Data: api.analytics.getVolumeHistory, api.analytics.getMuscleBreakdown
+```
+
+### PersonalRecordsScreen
+Create apps/mobile/app/personal-records.tsx:
+```typescript
+// PR list organized by exercise
+// Data from api.analytics.getPersonalRecords
+// Features:
+// - Search/filter by exercise name
+// - Group by muscle group (collapsible sections)
+// - Each PR shows: exercise name, weight, reps, date
+// - Trophy icon for recent PRs (within 7 days)
+// - Tap PR to see history for that exercise
+```
+
+### HealthScreen
+Create apps/mobile/app/health.tsx:
+```typescript
+// Health intelligence correlations
+// Data from api.health.getCorrelations
+// Features:
+// - HealthIntelligence card showing AI-detected patterns
+// - Sleep vs Performance chart
+// - InjuryRiskIndicator (low/medium/high with explanation)
+// - Readiness trend over past 7 days
+// - Recovery recommendations based on data
+```
+
+## TASK 4.4: Workout History
+
+### WorkoutHistoryScreen
+Create apps/mobile/app/workout-history.tsx:
+```typescript
+// Infinite scroll list of past workouts
+// Data from api.workout.history with pagination
+// Features:
+// - Date range filter (this week, this month, all time)
+// - Each card shows: date, workout name, duration, exercises count, PRs
+// - Pull-to-refresh
+// - Tap to navigate to workout detail
+```
+
+### WorkoutDetailScreen
+Create apps/mobile/app/workout/[id].tsx:
+```typescript
+// Detailed workout view
+// Data from api.workout.getById
+// Features:
+// - Header with date, duration, total volume
+// - Exercise breakdown with all sets (weight × reps)
+// - PR badges on sets that were PRs
+// - Notes section
+// - "Repeat Workout" button that copies to new workout
+```
+
+## TASK 4.5: Exercise Library
+
+### ExercisesScreen
+Create apps/mobile/app/exercises.tsx:
+```typescript
+// Searchable exercise library
+// Data from api.exercise.list
+// Features:
+// - Search input with autocomplete
+// - Filter chips: muscle group, equipment
+// - Card grid showing exercise name, primary muscle, equipment
+// - Tap to open exercise detail
+```
+
+### ExerciseDetailScreen
+Create apps/mobile/app/exercise/[id].tsx:
+```typescript
+// Exercise detail view
+// Data from api.exercise.getById
+// Features:
+// - Name, primary/secondary muscles, equipment
+// - Instructions text (expandable)
+// - Form tips from AI (api.exercise.getFormTips)
+// - Personal history chart (weight over time)
+// - "Substitutes" section (similar exercises)
+```
+
+## TASK 4.6: Run History & Shoes
+
+### RunHistoryScreen
+Create apps/mobile/app/run-history.tsx:
+```typescript
+// List of past runs
+// Data from api.running.history
+// Features:
+// - Filter by run type (easy, tempo, interval, long, race)
+// - Each card: date, distance, time, pace, PR badge if applicable
+// - Infinite scroll pagination
+// - Tap to open run detail
+```
+
+### RunDetailScreen
+Create apps/mobile/app/run/[id].tsx:
+```typescript
+// Detailed run view
+// Data from api.running.getById
+// Features:
+// - Static map showing route polyline
+// - Stats grid: distance, time, pace, elevation, heart rate
+// - Splits table (per km/mile)
+// - Shoe used (if tracked)
+// - "Share" button
+```
+
+### ShoesScreen
+Create apps/mobile/app/shoes.tsx:
+```typescript
+// Running shoe tracker
+// Data from api.running.getShoes
+// Features:
+// - Card per shoe: brand, model, color swatch
+// - Mileage progress bar (current / replacement threshold)
+// - Warning icon when approaching replacement
+// - "Retire Shoe" option
+// - FAB to add new shoe
+```
+
+### AddShoeScreen
+Create apps/mobile/app/add-shoe.tsx:
+```typescript
+// Form to add new shoe
+// Features:
+// - Brand picker (Nike, Adidas, Brooks, etc.)
+// - Model text input
+// - Color picker
+// - Initial mileage input (if not new)
+// - Replacement threshold (default 500km)
+// Submit calls api.running.addShoe
+```
+
+## TASK 4.7: Wearables & Nutrition
+
+### IntegrationsScreen
+Create apps/mobile/app/integrations.tsx:
+```typescript
+// Wearable connections
+// Features:
+// - Apple Health card: status, last sync, toggle
+// - Terra wearables: list of supported devices (Garmin, Whoop, Oura)
+// - Each shows connection status, connect/disconnect button
+// - OAuth flow for Terra devices
+// Data: api.wearables.getConnections
+// Actions: api.wearables.connect, api.wearables.disconnect
+```
+
+### NutritionScreen
+Create apps/mobile/app/nutrition.tsx:
+```typescript
+// Daily nutrition tracking
+// Data from api.nutrition.getToday
+// Features:
+// - Macro rings: protein, carbs, fat (vs targets)
+// - Calorie total vs goal
+// - Meal log (breakfast, lunch, dinner, snacks)
+// - "Log Meal" button opens meal entry
+// - Water tracking with quick-add buttons
+```
+
+## STYLING REQUIREMENTS
+
+All components MUST use:
+- colors from useTheme() hook
+- spacing, fontSize, fontWeight, borderRadius from tokens.ts
+- Follow patterns in existing components (see apps/mobile/src/components/)
+
+## tRPC ENDPOINTS TO USE
+
+All endpoints exist in backend routers:
+- api.calendar.getDay, api.calendar.getWeek, api.calendar.reschedule
+- api.program.listUserPrograms, api.program.getById, api.program.generateAI, api.program.getTemplates
+- api.analytics.getVolumeHistory, api.analytics.getMuscleBreakdown, api.analytics.getPersonalRecords
+- api.health.getCorrelations
+- api.workout.history, api.workout.getById
+- api.exercise.list, api.exercise.getById, api.exercise.getFormTips
+- api.running.history, api.running.getById, api.running.getShoes, api.running.addShoe
+- api.wearables.getConnections, api.wearables.connect, api.wearables.disconnect
+- api.nutrition.getToday, api.nutrition.logMeal
+
+## VALIDATION CRITERIA
+
+This chunk is complete when:
+
+1. **Calendar:**
+   - [ ] Week view shows 7 days with workout icons
+   - [ ] Tap day opens bottom sheet with details
+   - [ ] Reschedule moves workout to new date
+
+2. **Programs:**
+   - [ ] Three tabs show active/completed/discover
+   - [ ] Program detail shows week breakdown
+   - [ ] Questionnaire generates AI program
+
+3. **Analytics:**
+   - [ ] Volume chart renders with real data
+   - [ ] Muscle breakdown shows pie chart
+   - [ ] Personal records list by exercise
+
+4. **History:**
+   - [ ] Workout history scrolls infinitely
+   - [ ] Workout detail shows all sets
+   - [ ] Run history with filters works
+
+5. **Exercise Library:**
+   - [ ] Search finds exercises
+   - [ ] Exercise detail shows form tips
+   - [ ] History chart renders
+
+6. **Wearables & Nutrition:**
+   - [ ] Apple Health shows connection status
+   - [ ] Nutrition shows macro rings
+
+7. **General:**
+   - [ ] TypeScript compiles: `cd apps/mobile && npx tsc --noEmit`
+   - [ ] Navigation works between all screens
+   - [ ] No console errors
+
+## TESTING
+
+Manual test flow:
+1. Open calendar, verify week view loads
+2. Tap a day, verify bottom sheet opens
+3. Navigate to Programs, check all tabs
+4. Open Analytics, verify charts render
+5. Open workout history, scroll to load more
+6. Search exercises, open detail
+7. Check run history and shoe tracking
+8. Verify integrations screen shows connection status

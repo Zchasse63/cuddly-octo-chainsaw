@@ -15,83 +15,34 @@ import {
   Copy,
   Edit,
   Trash2,
+  AlertCircle,
 } from 'lucide-react';
 import Link from 'next/link';
+import { trpc } from '@/lib/trpc';
 
-const mockPrograms = [
-  {
-    id: '1',
-    name: 'Strength Builder',
-    description: '12-week progressive overload program for building strength',
-    duration: '12 weeks',
-    type: 'Strength',
-    activeClients: 23,
-    totalClients: 45,
-    workoutsPerWeek: 4,
-    createdAt: 'Dec 15, 2023',
-    color: 'bg-accent-blue',
-  },
-  {
-    id: '2',
-    name: 'Hypertrophy Focus',
-    description: 'Muscle building program with volume-based training',
-    duration: '8 weeks',
-    type: 'Hypertrophy',
-    activeClients: 18,
-    totalClients: 32,
-    workoutsPerWeek: 5,
-    createdAt: 'Jan 10, 2024',
-    color: 'bg-accent-purple',
-  },
-  {
-    id: '3',
-    name: '12-Week Transformation',
-    description: 'Complete body recomposition with diet and training',
-    duration: '12 weeks',
-    type: 'Fat Loss',
-    activeClients: 31,
-    totalClients: 67,
-    workoutsPerWeek: 5,
-    createdAt: 'Nov 1, 2023',
-    color: 'bg-accent-coral',
-  },
-  {
-    id: '4',
-    name: 'Marathon Prep',
-    description: 'Endurance training for marathon preparation',
-    duration: '16 weeks',
-    type: 'Cardio',
-    activeClients: 8,
-    totalClients: 12,
-    workoutsPerWeek: 6,
-    createdAt: 'Feb 1, 2024',
-    color: 'bg-accent-green',
-  },
-  {
-    id: '5',
-    name: 'Powerlifting Peaking',
-    description: 'Competition prep for powerlifting meets',
-    duration: '10 weeks',
-    type: 'Strength',
-    activeClients: 5,
-    totalClients: 14,
-    workoutsPerWeek: 4,
-    createdAt: 'Jan 20, 2024',
-    color: 'bg-accent-orange',
-  },
-];
+const programTypeColors: Record<string, string> = {
+  strength: 'bg-accent-blue',
+  running: 'bg-accent-green',
+  hybrid: 'bg-accent-purple',
+  crossfit: 'bg-accent-coral',
+  custom: 'bg-accent-orange',
+};
 
 export default function ProgramsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
 
-  const programTypes = ['all', 'Strength', 'Hypertrophy', 'Fat Loss', 'Cardio'];
+  const programTypes = ['all', 'strength', 'running', 'hybrid', 'crossfit', 'custom'];
 
-  const filteredPrograms = mockPrograms.filter((program) => {
+  // Fetch program templates from tRPC
+  const { data: programs = [], isLoading, error } = trpc.coachDashboard.getProgramTemplates.useQuery({
+    programType: filterType !== 'all' ? (filterType as 'strength' | 'running' | 'hybrid' | 'crossfit' | 'custom') : undefined,
+  });
+
+  const filteredPrograms = programs.filter((program) => {
     const matchesSearch = program.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      program.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterType === 'all' || program.type === filterType;
-    return matchesSearch && matchesFilter;
+      (program.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
   });
 
   return (
@@ -109,6 +60,21 @@ export default function ProgramsPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Error State */}
+      {error && (
+        <Card variant="bordered" padding="md" className="border-accent-red/50 bg-accent-red/5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-accent-red mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-accent-red">Failed to load programs</p>
+              <p className="text-sm text-text-secondary mt-1">
+                {error.message || 'An error occurred while fetching your programs. Please try again.'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card variant="bordered" padding="md">
@@ -131,7 +97,7 @@ export default function ProgramsPage() {
             >
               {programTypes.map((type) => (
                 <option key={type} value={type}>
-                  {type === 'all' ? 'All Types' : type}
+                  {type === 'all' ? 'All Types' : type.charAt(0).toUpperCase() + type.slice(1)}
                 </option>
               ))}
             </select>
@@ -139,72 +105,108 @@ export default function ProgramsPage() {
         </div>
       </Card>
 
+      {/* Loading State */}
+      {isLoading && (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i} variant="elevated" padding="none" className="overflow-hidden">
+              <div className="h-2 bg-background-tertiary animate-pulse" />
+              <div className="p-6 space-y-4">
+                <div className="h-5 bg-background-tertiary rounded animate-pulse w-3/4" />
+                <div className="h-6 bg-background-tertiary rounded animate-pulse w-16" />
+                <div className="space-y-2">
+                  <div className="h-4 bg-background-tertiary rounded animate-pulse w-full" />
+                  <div className="h-4 bg-background-tertiary rounded animate-pulse w-5/6" />
+                </div>
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div className="h-4 bg-background-tertiary rounded animate-pulse" />
+                  <div className="h-4 bg-background-tertiary rounded animate-pulse" />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
       {/* Programs Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredPrograms.map((program) => (
-          <Card key={program.id} variant="elevated" padding="none" className="overflow-hidden">
-            <div className={`h-2 ${program.color}`} />
-            <div className="p-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold text-lg">{program.name}</h3>
-                  <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-background-secondary text-text-secondary">
-                    {program.type}
-                  </span>
-                </div>
-                <button className="p-2 hover:bg-background-secondary rounded-lg transition-colors">
-                  <MoreVertical className="w-5 h-5 text-text-secondary" />
-                </button>
-              </div>
+      {!isLoading && (
+        <>
+          {filteredPrograms.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredPrograms.map((program) => (
+                <Card key={program.id} variant="elevated" padding="none" className="overflow-hidden">
+                  <div className={`h-2 ${programTypeColors[program.programType] || 'bg-accent-blue'}`} />
+                  <div className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold text-lg">{program.name}</h3>
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-background-secondary text-text-secondary">
+                          {program.programType.charAt(0).toUpperCase() + program.programType.slice(1)}
+                        </span>
+                      </div>
+                      <button aria-label="More actions" className="p-2 hover:bg-background-secondary rounded-lg transition-colors">
+                        <MoreVertical className="w-5 h-5 text-text-secondary" />
+                      </button>
+                    </div>
 
-              <p className="mt-3 text-sm text-text-secondary line-clamp-2">
-                {program.description}
-              </p>
+                    <p className="mt-3 text-sm text-text-secondary line-clamp-2">
+                      {program.description || 'No description provided'}
+                    </p>
 
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="w-4 h-4 text-text-tertiary" />
-                  <span className="text-text-secondary">{program.duration}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Dumbbell className="w-4 h-4 text-text-tertiary" />
-                  <span className="text-text-secondary">{program.workoutsPerWeek}x/week</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm col-span-2">
-                  <Users className="w-4 h-4 text-text-tertiary" />
-                  <span className="text-text-secondary">
-                    {program.activeClients} active / {program.totalClients} total clients
-                  </span>
-                </div>
-              </div>
+                    <div className="mt-4 grid grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Calendar className="w-4 h-4 text-text-tertiary" />
+                        <span className="text-text-secondary">{program.durationWeeks || 0} weeks</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Dumbbell className="w-4 h-4 text-text-tertiary" />
+                        <span className="text-text-secondary">{program.daysPerWeek || 0}x/week</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm col-span-2">
+                        <span className="text-text-secondary text-xs">
+                          Created {program.createdAt ? new Date(program.createdAt).toLocaleDateString() : 'Recently'}
+                        </span>
+                      </div>
+                    </div>
 
-              <div className="mt-4 pt-4 border-t border-background-tertiary flex gap-2">
-                <Link href={`/dashboard/programs/${program.id}`} className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full">
-                    <Edit className="w-4 h-4 mr-1" />
-                    Edit
-                  </Button>
-                </Link>
-                <Button variant="ghost" size="sm">
-                  <Copy className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="sm" className="text-accent-red hover:text-accent-red">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
+                    <div className="mt-4 pt-4 border-t border-background-tertiary flex gap-2">
+                      <Link href={`/dashboard/programs/${program.id}`} className="flex-1">
+                        <Button variant="outline" size="sm" className="w-full">
+                          <Edit className="w-4 h-4 mr-1" />
+                          Edit
+                        </Button>
+                      </Link>
+                      <Button variant="ghost" size="sm" aria-label="Copy program">
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" aria-label="Delete program" className="text-accent-red hover:text-accent-red">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
             </div>
-          </Card>
-        ))}
-      </div>
-
-      {filteredPrograms.length === 0 && (
-        <Card variant="bordered" padding="lg" className="text-center">
-          <Dumbbell className="w-12 h-12 mx-auto mb-4 text-text-tertiary" />
-          <p className="text-text-secondary">No programs found matching your criteria</p>
-          <Link href="/dashboard/programs/new">
-            <Button className="mt-4">Create Your First Program</Button>
-          </Link>
-        </Card>
+          ) : (
+            <Card variant="bordered" padding="lg" className="text-center">
+              <Dumbbell className="w-12 h-12 mx-auto mb-4 text-text-tertiary" />
+              <p className="text-text-secondary mb-2">
+                {programs.length === 0
+                  ? "You don't have any program templates yet"
+                  : "No programs found matching your criteria"}
+              </p>
+              <p className="text-sm text-text-tertiary mb-4">
+                Create program templates to use with your clients
+              </p>
+              <Link href="/dashboard/programs/new">
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Your First Program
+                </Button>
+              </Link>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

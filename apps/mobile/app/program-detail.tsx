@@ -126,7 +126,7 @@ export default function ProgramDetailScreen() {
           <View
             style={{
               alignSelf: 'flex-start',
-              backgroundColor: program.programType === 'running' ? '#4ECDC420' : colors.accent.blue + '20',
+              backgroundColor: program.programType === 'running' ? colors.activity.running + '20' : colors.accent.blue + '20',
               paddingHorizontal: spacing.sm,
               paddingVertical: spacing.xs,
               borderRadius: borderRadius.full,
@@ -136,7 +136,7 @@ export default function ProgramDetailScreen() {
             <Text
               style={{
                 fontSize: fontSize.xs,
-                color: program.programType === 'running' ? '#4ECDC4' : colors.accent.blue,
+                color: program.programType === 'running' ? colors.activity.running : colors.accent.blue,
                 fontWeight: fontWeight.medium,
                 textTransform: 'uppercase',
               }}
@@ -344,7 +344,7 @@ export default function ProgramDetailScreen() {
                           backgroundColor: day.isRestDay
                             ? colors.background.tertiary
                             : day.activityType === 'running'
-                            ? '#4ECDC420'
+                            ? colors.activity.running + '20'
                             : colors.accent.blue + '20',
                           justifyContent: 'center',
                           alignItems: 'center',
@@ -356,7 +356,7 @@ export default function ProgramDetailScreen() {
                             REST
                           </Text>
                         ) : day.activityType === 'running' ? (
-                          <Footprints size={16} color="#4ECDC4" />
+                          <Footprints size={16} color={colors.activity.running} />
                         ) : (
                           <Dumbbell size={16} color={colors.accent.blue} />
                         )}

@@ -26,7 +26,7 @@ import {
 // Tool 36: Get Client List
 export const getClientList = createTool({
   name: 'getClientList',
-  description: 'Get list of all clients assigned to the coach',
+  description: 'Get list of all clients assigned to the coach. Use this when the coach asks "show my clients", "how many clients do I have", "list my athletes", or when you need to display the coach\'s client roster.',
   parameters: z.object({
     status: z.enum(['active', 'all']).default('active'),
     limit: z.number().min(1).max(50).default(20),
@@ -49,7 +49,7 @@ export const getClientList = createTool({
 // Tool 37: Get Client Profile
 export const getClientProfile = createTool({
   name: 'getClientProfile',
-  description: 'Get detailed profile for a specific client',
+  description: 'Get detailed profile for a specific client. Use this when the coach asks "show me John\'s profile", "what are Sarah\'s goals", "tell me about this client", or when you need to access client experience level, goals, and preferences.',
   parameters: z.object({
     clientId: z.string().uuid().describe('Client user ID'),
   }),

@@ -1,6 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { Card } from '@/components/ui/Card';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+import { ErrorMessage } from '@/components/ui/ErrorMessage';
+import { ScheduleSessionModal } from '@/components/scheduling/ScheduleSessionModal';
+import { trpc } from '@/lib/trpc';
 import {
   Users,
   TrendingUp,
@@ -13,11 +18,72 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map(word => word[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function formatTimeAgo(timestamp: Date | string | null | undefined): string {
+  if (!timestamp) return 'Unknown time';
+
+  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hour${Math.floor(seconds / 3600) !== 1 ? 's' : ''} ago`;
+  return `${Math.floor(seconds / 86400)} day${Math.floor(seconds / 86400) !== 1 ? 's' : ''} ago`;
+}
+
+function formatSessionTime(scheduledAt: Date | string): string {
+  const date = typeof scheduledAt === 'string' ? new Date(scheduledAt) : scheduledAt;
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  const day = date.getDate();
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${month} ${day}, ${time}`;
+}
+
 export default function DashboardPage() {
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+
+  const { data, isLoading, error, refetch } = trpc.coachDashboard.getDashboardSummary.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-text-secondary">Welcome back</p>
+        </div>
+        <LoadingSkeleton variant="card" count={4} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-text-secondary">Welcome back</p>
+        </div>
+        <ErrorMessage error={error} retry={() => refetch()} />
+      </div>
+    );
+  }
+
   const stats = [
     {
       name: 'Active Clients',
-      value: '247',
+      value: data?.activeClients.toString() || '0',
       change: '+12%',
       changeType: 'increase',
       icon: Users,
@@ -25,15 +91,15 @@ export default function DashboardPage() {
     },
     {
       name: 'Monthly Revenue',
-      value: '$12,450',
-      change: '+8%',
+      value: '$0',
+      change: '+0%',
       changeType: 'increase',
       icon: DollarSign,
       color: 'bg-accent-green',
     },
     {
       name: 'Workouts This Week',
-      value: '1,892',
+      value: data?.workoutsThisWeek.toString() || '0',
       change: '+23%',
       changeType: 'increase',
       icon: Activity,
@@ -49,74 +115,29 @@ export default function DashboardPage() {
     },
   ];
 
-  const recentActivity = [
-    {
-      client: 'Sarah M.',
-      action: 'completed workout',
-      program: 'Strength Builder',
-      time: '5 min ago',
-      avatar: 'SM',
-    },
-    {
-      client: 'Mike R.',
-      action: 'logged PR',
-      program: 'Bench Press - 225 lbs',
-      time: '12 min ago',
-      avatar: 'MR',
-    },
-    {
-      client: 'Emily K.',
-      action: 'started program',
-      program: '12-Week Transformation',
-      time: '1 hour ago',
-      avatar: 'EK',
-    },
-    {
-      client: 'James T.',
-      action: 'sent message',
-      program: 'Question about form',
-      time: '2 hours ago',
-      avatar: 'JT',
-    },
-    {
-      client: 'Lisa W.',
-      action: 'completed week 8',
-      program: 'Marathon Prep',
-      time: '3 hours ago',
-      avatar: 'LW',
-    },
-  ];
+  const recentActivity = (data?.recentActivity || []).map(activity => ({
+    client: activity.clientName,
+    action: activity.action,
+    program: '',
+    time: formatTimeAgo(activity.timestamp),
+    avatar: getInitials(activity.clientName),
+  }));
 
-  const upcomingSessions = [
-    {
-      client: 'David Chen',
-      type: 'Check-in Call',
-      time: '2:00 PM',
-      avatar: 'DC',
-    },
-    {
-      client: 'Anna Smith',
-      type: 'Program Review',
-      time: '4:30 PM',
-      avatar: 'AS',
-    },
-    {
-      client: 'Tom Brown',
-      type: 'Initial Consultation',
-      time: 'Tomorrow 10:00 AM',
-      avatar: 'TB',
-    },
-  ];
+  const upcomingSessions = (data?.upcomingSessions || []).map(session => ({
+    id: session.id,
+    client: session.clientName,
+    type: session.sessionType,
+    time: formatSessionTime(session.scheduledAt),
+    avatar: getInitials(session.clientName),
+  }));
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-text-secondary">Welcome back, John</p>
+        <p className="text-text-secondary">Welcome back</p>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <Card key={stat.name} variant="elevated" padding="md">
@@ -151,7 +172,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
         <Card variant="default" padding="none" className="lg:col-span-2">
           <div className="p-6 border-b border-background-tertiary">
             <div className="flex items-center justify-between">
@@ -166,71 +186,84 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="divide-y divide-background-secondary">
-            {recentActivity.map((activity, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-4 p-4 hover:bg-background-secondary/50 transition-colors"
-              >
-                <div className="w-10 h-10 rounded-full bg-accent-blue/10 text-accent-blue flex items-center justify-center font-medium text-sm">
-                  {activity.avatar}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium">
-                    <span className="text-accent-blue">{activity.client}</span>{' '}
-                    {activity.action}
+            {recentActivity.length > 0 ? (
+              recentActivity.map((activity, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-4 p-4 hover:bg-background-secondary/50 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-full bg-accent-blue/10 text-accent-blue flex items-center justify-center font-medium text-sm">
+                    {activity.avatar}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">
+                      <span className="text-accent-blue">{activity.client}</span>{' '}
+                      {activity.action}
+                    </p>
+                    {activity.program && (
+                      <p className="text-sm text-text-secondary truncate">
+                        {activity.program}
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-xs text-text-tertiary whitespace-nowrap">
+                    {activity.time}
                   </p>
-                  <p className="text-sm text-text-secondary truncate">
-                    {activity.program}
-                  </p>
                 </div>
-                <p className="text-xs text-text-tertiary whitespace-nowrap">
-                  {activity.time}
-                </p>
+              ))
+            ) : (
+              <div className="p-8 text-center text-text-secondary">
+                <p>No recent activity</p>
               </div>
-            ))}
+            )}
           </div>
         </Card>
 
-        {/* Upcoming Sessions */}
         <Card variant="default" padding="none">
           <div className="p-6 border-b border-background-tertiary">
             <h2 className="text-lg font-semibold">Upcoming Sessions</h2>
           </div>
-          <div className="p-4 space-y-3">
-            {upcomingSessions.map((session, index) => (
-              <div
-                key={index}
-                className="p-4 rounded-xl bg-background-secondary hover:bg-background-tertiary/50 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-accent-purple/10 text-accent-purple flex items-center justify-center font-medium text-sm">
-                    {session.avatar}
+          {upcomingSessions.length > 0 ? (
+            <div className="p-4 space-y-3">
+              {upcomingSessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="p-4 rounded-xl bg-background-secondary hover:bg-background-tertiary/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-accent-purple/10 text-accent-purple flex items-center justify-center font-medium text-sm">
+                      {session.avatar}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">{session.client}</p>
+                      <p className="text-sm text-text-secondary capitalize">{session.type}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium">{session.client}</p>
-                    <p className="text-sm text-text-secondary">{session.type}</p>
+                  <div className="mt-3 flex items-center justify-between">
+                    <p className="text-sm text-accent-blue font-medium">
+                      {session.time}
+                    </p>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <p className="text-sm text-accent-blue font-medium">
-                    {session.time}
-                  </p>
-                  <button className="text-xs px-3 py-1 bg-accent-blue/10 text-accent-blue rounded-lg hover:bg-accent-blue/20 transition-colors">
-                    Join
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-text-secondary">
+              <p className="mb-2">No upcoming sessions</p>
+              <p className="text-sm">Schedule one now!</p>
+            </div>
+          )}
           <div className="p-4 border-t border-background-tertiary">
-            <button className="w-full py-2 text-sm text-accent-blue hover:underline">
+            <button
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="w-full py-2 text-sm text-accent-blue hover:underline"
+            >
               Schedule New Session
             </button>
           </div>
         </Card>
       </div>
 
-      {/* Quick Actions */}
       <Card variant="bordered" padding="md">
         <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -264,6 +297,14 @@ export default function DashboardPage() {
           </Link>
         </div>
       </Card>
+
+      <ScheduleSessionModal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        onSuccess={() => {
+          refetch();
+        }}
+      />
     </div>
   );
 }

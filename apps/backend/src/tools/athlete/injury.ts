@@ -14,7 +14,7 @@ import { createInjuryRiskService } from '../../services/injuryRisk';
 // Tool 28: Get Injury History
 export const getInjuryHistory = createTool({
   name: 'getInjuryHistory',
-  description: 'Get the user\'s injury history and current active injuries',
+  description: 'Get the user\'s injury history and current active injuries. Use this when the user asks "what injuries do I have", "am I injured", "show my injury history", or when planning workouts around injury limitations.',
   parameters: z.object({}),
   execute: async (_params, ctx) => {
     const profile = await ctx.db.query.userProfiles.findFirst({
@@ -41,7 +41,7 @@ export const getInjuryHistory = createTool({
 // Tool 29: Get Injury Risk Assessment
 export const getInjuryRiskAssessment = createTool({
   name: 'getInjuryRiskAssessment',
-  description: 'Get AI-powered injury risk assessment based on training patterns',
+  description: 'Get AI-powered injury risk assessment based on training patterns. Use this when the user asks "am I at risk for injury", "should I reduce my training load", "assess my injury risk", or when evaluating training sustainability.',
   parameters: z.object({}),
   requiredRole: 'premium',
   execute: async (_params, ctx) => {
@@ -70,7 +70,7 @@ export const getInjuryRiskAssessment = createTool({
 // Tool 30: Get Exercises to Avoid
 export const getExercisesToAvoid = createTool({
   name: 'getExercisesToAvoid',
-  description: 'Get list of exercises the user should avoid based on injuries',
+  description: 'Get list of exercises the user should avoid based on injuries. Use this when the user asks "what exercises should I avoid", "can I do bench press with my injury", "what movements are safe", or when providing exercise substitutions for injured athletes.',
   parameters: z.object({
     bodyPart: z.string().optional().describe('Filter by affected body part'),
   }),

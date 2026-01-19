@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
@@ -23,14 +23,8 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withRepeat,
-  withSequence,
   FadeIn,
   FadeOut,
-  Layout,
 } from 'react-native-reanimated';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Button, Card, Toast } from '../../src/components/ui';
@@ -39,6 +33,13 @@ import { useWorkoutStore, useActiveWorkout, useRestTimer } from '../../src/store
 import { api } from '../../src/lib/trpc';
 import { useWeightUnit, formatWeight } from '../../src/stores/profile';
 import { spacing, fontSize, fontWeight, borderRadius, heights, springs } from '../../src/theme/tokens';
+import { ExerciseSelector } from '../../src/components/workout/ExerciseSelector';
+import { SetLoggingForm } from '../../src/components/workout/SetLoggingForm';
+import { VoiceLoggingButton } from '../../src/components/workout/VoiceLoggingButton';
+import { RestTimer } from '../../src/components/workout/RestTimer';
+import { PRCelebration } from '../../src/components/workout/PRCelebration';
+import { WorkoutSummary } from '../../src/components/workout/WorkoutSummary';
+import { BadgeCelebration } from '../../src/components/badges/BadgeCelebration';
 
 export default function WorkoutScreen() {
   const { colors } = useTheme();
@@ -50,8 +51,12 @@ export default function WorkoutScreen() {
   // Local state
   const [isRecording, setIsRecording] = useState(false);
   const [showExerciseSearch, setShowExerciseSearch] = useState(false);
-  const [exerciseSearchQuery, setExerciseSearchQuery] = useState('');
   const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
+  const [showPRCelebration, setShowPRCelebration] = useState(false);
+  const [prData, setPRData] = useState<{ exerciseName: string; weight: number; reps: number; weightUnit: string } | null>(null);
+  const [showCompleteSummary, setShowCompleteSummary] = useState(false);
+  const [showBadgeCelebration, setShowBadgeCelebration] = useState(false);
+  const [newlyEarnedBadge, setNewlyEarnedBadge] = useState<any>(null);
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' }>({
     visible: false,
     message: '',
@@ -82,14 +87,6 @@ export default function WorkoutScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Animation for recording pulse
-  const pulseScale = useSharedValue(1);
-
-  // Search exercises
-  const { data: exercises } = api.exercise.list.useQuery(
-    { search: exerciseSearchQuery },
-    { enabled: showExerciseSearch && exerciseSearchQuery.length >= 2 }
-  );
 
   // Get exercise details for preselected
   const { data: preselectedExercise } = api.exercise.byId.useQuery(
@@ -97,15 +94,33 @@ export default function WorkoutScreen() {
     { enabled: !!preselectedExerciseId }
   );
 
+  // Badge check mutation
+  const checkBadgesMutation = api.gamification.checkBadgesAfterWorkout.useMutation();
+
   // Save workout mutation
   const saveWorkoutMutation = api.workout.complete.useMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       endWorkout();
       setToast({
         visible: true,
         message: `Workout saved! ${data.summary.totalSets} sets, ${data.summary.prsAchieved} PRs`,
         type: 'success',
       });
+
+      // Check for new badges
+      try {
+        const badgeResult = await checkBadgesMutation.mutateAsync({ workoutId: data.workout.id });
+        if (badgeResult?.newBadges && badgeResult.newBadges.length > 0) {
+          const firstBadge = badgeResult.newBadges[0];
+          if (firstBadge?.definition) {
+            setNewlyEarnedBadge(firstBadge.definition);
+            setShowBadgeCelebration(true);
+          }
+        }
+      } catch (e) {
+        // Badge check failed silently - don't block workout completion
+      }
+
       router.push(`/workout/${data.workout.id}`);
     },
     onError: (error) => {
@@ -172,15 +187,10 @@ export default function WorkoutScreen() {
 
     // Calculate totals
     let totalSets = 0;
-    let totalReps = 0;
-    let totalVolume = 0;
-
     activeWorkout.exercises.forEach((exercise) => {
       exercise.sets.forEach((set) => {
         if (set.completedAt && !set.isWarmup) {
           totalSets++;
-          totalReps += set.reps || 0;
-          totalVolume += (set.weight || 0) * (set.reps || 0);
         }
       });
     });
@@ -191,14 +201,7 @@ export default function WorkoutScreen() {
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    // Save to backend - use workoutId from active workout
-    // Note: In offline-first mode, the workout may not have a backend ID yet
-    // For now, we'll use the local ID and let the sync handle it
-    saveWorkoutMutation.mutate({
-      workoutId: activeWorkout.id,
-      notes: activeWorkout.notes || undefined,
-    });
+    setShowCompleteSummary(true);
   };
 
   const handleCancelWorkout = () => {
@@ -222,28 +225,18 @@ export default function WorkoutScreen() {
   const handleVoicePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsRecording(!isRecording);
-
-    if (!isRecording) {
-      pulseScale.value = withRepeat(
-        withSequence(
-          withSpring(1.1, springs.gentle),
-          withSpring(1, springs.gentle)
-        ),
-        -1,
-        true
-      );
-      // TODO: Start voice recognition
-    } else {
-      pulseScale.value = withSpring(1);
-      // TODO: Stop voice recognition
-    }
+    // Voice recognition handled by VoiceLoggingButton component
+    // Integrated with voice parsing API in future iteration
   };
 
-  const handleAddExercise = (exercise: { id: string; name: string; primaryMuscle: string }) => {
+  const handleAddExercise = (exercise: { id: string; name: string; primaryMuscle?: string }) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    addExercise(exercise);
+    addExercise({
+      id: exercise.id,
+      name: exercise.name,
+      primaryMuscle: exercise.primaryMuscle || 'Unknown',
+    });
     setShowExerciseSearch(false);
-    setExerciseSearchQuery('');
     // Expand the new exercise
     const newExerciseId = activeWorkout?.exercises[activeWorkout.exercises.length - 1]?.id;
     if (newExerciseId) setExpandedExercise(newExerciseId);
@@ -252,11 +245,9 @@ export default function WorkoutScreen() {
   const handleCompleteSet = (exerciseId: string, setId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     completeSet(exerciseId, setId);
+    // Check for PR and trigger celebration if needed
+    // PR detection would come from backend response in real implementation
   };
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulseScale.value }],
-  }));
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -292,54 +283,17 @@ export default function WorkoutScreen() {
       />
 
       {/* Rest Timer Overlay */}
-      {restTimer.running && (
-        <Animated.View
-          entering={FadeIn}
-          exiting={FadeOut}
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            backgroundColor: colors.background.secondary,
-            padding: spacing.md,
-            borderTopLeftRadius: borderRadius.lg,
-            borderTopRightRadius: borderRadius.lg,
-            zIndex: 100,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: 0.1,
-            shadowRadius: 8,
-            elevation: 8,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Timer size={20} color={colors.accent.blue} />
-              <Text style={{ fontSize: fontSize.base, color: colors.text.secondary, marginLeft: spacing.xs }}>
-                Rest Timer
-              </Text>
-            </View>
-            <Text
-              style={{
-                fontSize: fontSize['3xl'],
-                fontWeight: fontWeight.bold,
-                color: restTimer.seconds <= 10 ? colors.semantic.error : colors.text.primary,
-              }}
-            >
-              {formatTime(restTimer.seconds)}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <TouchableOpacity onPress={resetRestTimer}>
-                <RotateCcw size={24} color={colors.text.secondary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={stopRestTimer}>
-                <X size={24} color={colors.text.secondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Animated.View>
-      )}
+      <RestTimer
+        visible={restTimer.running}
+        seconds={restTimer.seconds}
+        initialDuration={restTimer.target}
+        onReset={resetRestTimer}
+        onClose={stopRestTimer}
+        onChangeDuration={(duration) => {
+          stopRestTimer();
+          startRestTimer(duration);
+        }}
+      />
 
       <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: restTimer.running ? 100 : spacing.md }}>
         {/* Header */}
@@ -373,36 +327,6 @@ export default function WorkoutScreen() {
 
         {activeWorkout ? (
           <>
-            {/* Voice FAB */}
-            <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
-              <Animated.View style={pulseStyle}>
-                <TouchableOpacity
-                  onPress={handleVoicePress}
-                  style={{
-                    width: 80,
-                    height: 80,
-                    borderRadius: 40,
-                    backgroundColor: isRecording ? colors.semantic.error : colors.accent.blue,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    shadowColor: isRecording ? colors.semantic.error : colors.accent.blue,
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 8,
-                    elevation: 6,
-                  }}
-                >
-                  {isRecording ? (
-                    <MicOff size={32} color={colors.text.inverse} />
-                  ) : (
-                    <Mic size={32} color={colors.text.onAccent} />
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
-              <Text style={{ marginTop: spacing.sm, fontSize: fontSize.sm, color: colors.text.tertiary }}>
-                {isRecording ? 'Listening... Say "135 for 10"' : 'Tap to log by voice'}
-              </Text>
-            </View>
 
             {/* Exercises */}
             <View style={{ marginBottom: spacing.md }}>
@@ -515,109 +439,82 @@ export default function WorkoutScreen() {
       </ScrollView>
 
       {/* Exercise Search Modal */}
-      <Modal visible={showExerciseSearch} animationType="slide" transparent>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <View
-            style={{
-              flex: 1,
-              marginTop: 100,
-              backgroundColor: colors.background.primary,
-              borderTopLeftRadius: borderRadius.xl,
-              borderTopRightRadius: borderRadius.xl,
+      <ExerciseSelector
+        visible={showExerciseSearch}
+        onClose={() => setShowExerciseSearch(false)}
+        onSelectExercise={handleAddExercise}
+      />
+
+      {/* Voice Logging Button - positioned bottom-right above tab bar */}
+      {activeWorkout && (
+        <VoiceLoggingButton isRecording={isRecording} onPress={handleVoicePress} />
+      )}
+
+      {/* PR Celebration Modal */}
+      {showPRCelebration && prData && (
+        <PRCelebration
+          visible={showPRCelebration}
+          exerciseName={prData.exerciseName}
+          weight={prData.weight}
+          reps={prData.reps}
+          weightUnit={prData.weightUnit as 'kg' | 'lb'}
+          onDismiss={() => {
+            setShowPRCelebration(false);
+            setPRData(null);
+          }}
+        />
+      )}
+
+      {/* Workout Summary Modal */}
+      {showCompleteSummary && activeWorkout && (() => {
+        // Calculate summary data
+        const startTime = new Date(activeWorkout.startedAt).getTime();
+        const durationSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+        let totalVolume = 0;
+        let totalSets = 0;
+        activeWorkout.exercises.forEach((ex) => {
+          ex.sets.forEach((set) => {
+            if (set.completedAt && !set.isWarmup) {
+              totalSets++;
+              totalVolume += (set.weight || 0) * (set.reps || 0);
+            }
+          });
+        });
+
+        return (
+          <WorkoutSummary
+            visible={showCompleteSummary}
+            data={{
+              durationSeconds,
+              totalVolume,
+              exerciseCount: activeWorkout.exercises.length,
+              totalSets,
+              prs: [],
             }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                padding: spacing.md,
-                borderBottomWidth: 1,
-                borderBottomColor: colors.border.light,
-              }}
-            >
-              <TouchableOpacity onPress={() => setShowExerciseSearch(false)}>
-                <X size={24} color={colors.text.primary} />
-              </TouchableOpacity>
-              <Text style={{ flex: 1, fontSize: fontSize.lg, fontWeight: fontWeight.semibold, color: colors.text.primary, marginLeft: spacing.md }}>
-                Add Exercise
-              </Text>
-            </View>
+            weightUnit={weightUnit}
+            onSave={() => {
+              if (!activeWorkout) return;
+              saveWorkoutMutation.mutate({ workoutId: activeWorkout.id });
+              setShowCompleteSummary(false);
+            }}
+            onDiscard={() => {
+              cancelWorkout();
+              setShowCompleteSummary(false);
+            }}
+          />
+        );
+      })()}
 
-            <View style={{ padding: spacing.md }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: colors.background.secondary,
-                  borderRadius: borderRadius.lg,
-                  paddingHorizontal: spacing.md,
-                }}
-              >
-                <Dumbbell size={20} color={colors.icon.secondary} />
-                <TextInput
-                  value={exerciseSearchQuery}
-                  onChangeText={setExerciseSearchQuery}
-                  placeholder="Search exercises..."
-                  placeholderTextColor={colors.text.disabled}
-                  autoFocus
-                  style={{
-                    flex: 1,
-                    paddingVertical: spacing.sm,
-                    marginLeft: spacing.sm,
-                    fontSize: fontSize.base,
-                    color: colors.text.primary,
-                  }}
-                />
-              </View>
-            </View>
-
-            <ScrollView contentContainerStyle={{ padding: spacing.md }}>
-              {exercises?.map((exercise: any) => (
-                <TouchableOpacity
-                  key={exercise.id}
-                  onPress={() => handleAddExercise(exercise)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: spacing.md,
-                    backgroundColor: colors.background.secondary,
-                    borderRadius: borderRadius.lg,
-                    marginBottom: spacing.sm,
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: borderRadius.md,
-                      backgroundColor: colors.accent.blue + '20',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      marginRight: spacing.md,
-                    }}
-                  >
-                    <Dumbbell size={20} color={colors.accent.blue} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.medium, color: colors.text.primary }}>
-                      {exercise.name}
-                    </Text>
-                    <Text style={{ fontSize: fontSize.sm, color: colors.text.tertiary }}>
-                      {exercise.primaryMuscle}
-                    </Text>
-                  </View>
-                  <Plus size={20} color={colors.accent.blue} />
-                </TouchableOpacity>
-              ))}
-              {exerciseSearchQuery.length < 2 && (
-                <Text style={{ fontSize: fontSize.sm, color: colors.text.tertiary, textAlign: 'center' }}>
-                  Type at least 2 characters to search
-                </Text>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {/* Badge Celebration Modal */}
+      <BadgeCelebration
+        visible={showBadgeCelebration}
+        badge={newlyEarnedBadge}
+        onDismiss={() => {
+          setShowBadgeCelebration(false);
+          setNewlyEarnedBadge(null);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -715,18 +612,27 @@ function ExerciseCard({
           </View>
 
           {/* Sets */}
-          {exercise.sets.map((set: any, index: number) => (
-            <SetRow
-              key={set.id}
-              set={set}
-              setNumber={index + 1}
-              onUpdate={(data) => onUpdateSet(set.id, data)}
-              onComplete={() => onCompleteSet(set.id)}
-              onRemove={() => onRemoveSet(set.id)}
-              weightUnit={weightUnit}
-              colors={colors}
-            />
-          ))}
+          {exercise.sets.map((set: any, index: number) => {
+            // Get previous set data
+            const previousSet = index > 0 ? exercise.sets[index - 1] : undefined;
+            const prevSetData = previousSet?.completedAt
+              ? { weight: previousSet.weight || 0, reps: previousSet.reps || 0 }
+              : undefined;
+
+            return (
+              <SetLoggingForm
+                key={set.id}
+                set={set}
+                setNumber={index + 1}
+                previousSet={prevSetData}
+                weightUnit={weightUnit}
+                onUpdate={(data) => onUpdateSet(set.id, data)}
+                onComplete={() => onCompleteSet(set.id)}
+                onRemove={() => onRemoveSet(set.id)}
+                showRPE={true}
+              />
+            );
+          })}
 
           {/* Add Set Buttons */}
           <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
@@ -772,130 +678,3 @@ function ExerciseCard({
   );
 }
 
-// Set Row Component
-function SetRow({
-  set,
-  setNumber,
-  onUpdate,
-  onComplete,
-  onRemove,
-  weightUnit,
-  colors,
-}: {
-  set: any;
-  setNumber: number;
-  onUpdate: (data: any) => void;
-  onComplete: () => void;
-  onRemove: () => void;
-  weightUnit: 'kg' | 'lb';
-  colors: any;
-}) {
-  const isCompleted = !!set.completedAt;
-
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: spacing.sm,
-        opacity: isCompleted ? 0.6 : 1,
-      }}
-    >
-      {/* Set Number */}
-      <View style={{ width: 40, flexDirection: 'row', alignItems: 'center' }}>
-        <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>
-          {set.isWarmup ? 'W' : setNumber}
-        </Text>
-        {set.isPR && <Trophy size={12} color="#FFE66D" style={{ marginLeft: 4 }} />}
-      </View>
-
-      {/* Weight Input */}
-      <View style={{ flex: 1, marginRight: spacing.xs }}>
-        <TextInput
-          value={set.weight?.toString() || ''}
-          onChangeText={(text) => onUpdate({ weight: parseFloat(text) || null })}
-          keyboardType="decimal-pad"
-          placeholder="0"
-          placeholderTextColor={colors.text.disabled}
-          editable={!isCompleted}
-          style={{
-            fontSize: fontSize.base,
-            color: colors.text.primary,
-            backgroundColor: colors.background.tertiary,
-            borderRadius: borderRadius.sm,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: spacing.xs,
-          }}
-        />
-      </View>
-
-      {/* Reps Input */}
-      <View style={{ flex: 1, marginRight: spacing.sm }}>
-        <TextInput
-          value={set.reps?.toString() || ''}
-          onChangeText={(text) => onUpdate({ reps: parseInt(text) || null })}
-          keyboardType="number-pad"
-          placeholder="0"
-          placeholderTextColor={colors.text.disabled}
-          editable={!isCompleted}
-          style={{
-            fontSize: fontSize.base,
-            color: colors.text.primary,
-            backgroundColor: colors.background.tertiary,
-            borderRadius: borderRadius.sm,
-            paddingHorizontal: spacing.sm,
-            paddingVertical: spacing.xs,
-          }}
-        />
-      </View>
-
-      {/* Actions */}
-      <View style={{ width: 60, flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.xs }}>
-        {!isCompleted && (
-          <TouchableOpacity
-            onPress={onComplete}
-            disabled={!set.weight || !set.reps}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              backgroundColor: set.weight && set.reps ? colors.accent.green : colors.background.tertiary,
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Check size={18} color={set.weight && set.reps ? colors.text.onAccent : colors.text.disabled} />
-          </TouchableOpacity>
-        )}
-        {isCompleted ? (
-          <View
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              backgroundColor: colors.accent.green + '20',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Check size={18} color={colors.accent.green} />
-          </View>
-        ) : (
-          <TouchableOpacity
-            onPress={onRemove}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              backgroundColor: colors.semantic.error + '20',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Trash2 size={14} color={colors.semantic.error} />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-}

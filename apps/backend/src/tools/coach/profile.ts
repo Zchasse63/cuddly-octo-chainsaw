@@ -13,7 +13,7 @@ import { userProfiles } from '../../db/schema';
 // Tool 55: Get Coach Profile
 export const getCoachProfile = createTool({
   name: 'getCoachProfile',
-  description: 'Get the coach\'s own profile information',
+  description: 'Get the coach\'s own profile information. Use this when the coach asks "show my profile", "what are my specializations", "what is my account info", or when displaying coach credentials and settings.',
   parameters: z.object({}),
   requiredRole: 'coach',
   execute: async (_params, ctx) => {
@@ -41,7 +41,7 @@ export const getCoachProfile = createTool({
 // Tool 56: Get Pending Invitations
 export const getPendingInvitations = createTool({
   name: 'getPendingInvitations',
-  description: 'Get pending client invitations sent by the coach',
+  description: 'Get pending client invitations sent by the coach. Use this when the coach asks "who have I invited", "show pending invitations", "what invitations are outstanding", or when managing client onboarding.',
   parameters: z.object({
     status: z.enum(['pending', 'accepted', 'declined', 'all']).default('pending'),
     limit: z.number().min(1).max(50).default(20),

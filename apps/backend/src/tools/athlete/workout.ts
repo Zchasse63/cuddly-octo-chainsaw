@@ -8,12 +8,12 @@ import { z } from 'zod';
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { createTool } from '../registry';
 import { toolSuccess, toolError, getDateRange } from '../utils';
-import { workouts, workoutSets, personalRecords, exercises } from '../../db/schema';
+import { workouts, workoutSets, personalRecords, exercises, trainingPrograms, programDays } from '../../db/schema';
 
 // Tool 6: Get Today's Workout
 export const getTodaysWorkout = createTool({
   name: 'getTodaysWorkout',
-  description: 'Get the workout scheduled for today from the user\'s active program',
+  description: 'Get the workout scheduled for today from the user\'s active program. Use this when the user asks "what is my workout today", "what should I do today", "show me today\'s workout", or when planning the current training session.',
   parameters: z.object({}),
   execute: async (_params, ctx) => {
     // Check for active workout first
@@ -30,11 +30,81 @@ export const getTodaysWorkout = createTool({
       });
     }
 
-    // TODO: Check for scheduled program workout for today
+    // Check for scheduled program workout for today
+    const today = new Date().toISOString().split('T')[0];
+
+    // Find active program
+    const activeProgram = await ctx.db.query.trainingPrograms.findFirst({
+      where: and(eq(trainingPrograms.userId, ctx.userId), eq(trainingPrograms.status, 'active')),
+    });
+
+    if (!activeProgram) {
+      return toolSuccess({
+        hasScheduledWorkout: false,
+        isRestDay: false,
+        message: 'No workout scheduled for today. Would you like to start one?',
+      });
+    }
+
+    // Find today's scheduled workout
+    const todaysWorkout = await ctx.db.query.programDays.findFirst({
+      where: and(
+        eq(programDays.programId, activeProgram.id),
+        eq(programDays.scheduledDate, today),
+        eq(programDays.isCompleted, false)
+      ),
+      with: {
+        exercises: {
+          with: {
+            exercise: true,
+          },
+          orderBy: (programExercises, { asc }) => [asc(programExercises.exerciseOrder)],
+        },
+      },
+    });
+
+    if (!todaysWorkout) {
+      return toolSuccess({
+        hasScheduledWorkout: false,
+        isRestDay: false,
+        message: 'No workout scheduled for today. Would you like to start one?',
+      });
+    }
+
+    const isRestDay = todaysWorkout.workoutType === 'rest';
+
+    if (isRestDay) {
+      return toolSuccess({
+        hasScheduledWorkout: true,
+        isRestDay: true,
+        workout: {
+          id: todaysWorkout.id,
+          name: todaysWorkout.name || 'Rest Day',
+          description: todaysWorkout.description,
+        },
+        message: 'Today is a scheduled rest day. Recovery is part of progress!',
+      });
+    }
+
     return toolSuccess({
-      hasScheduledWorkout: false,
+      hasScheduledWorkout: true,
       isRestDay: false,
-      message: 'No workout scheduled for today. Would you like to start one?',
+      workout: {
+        id: todaysWorkout.id,
+        name: todaysWorkout.name || 'Today\'s Workout',
+        type: todaysWorkout.workoutType,
+        description: todaysWorkout.description,
+        estimatedDuration: todaysWorkout.estimatedDuration,
+        exercises: todaysWorkout.exercises.map(pe => ({
+          id: pe.exerciseId,
+          name: pe.exercise.name,
+          sets: pe.sets,
+          reps: pe.repsTarget,
+          rpe: pe.rpeTarget,
+          notes: pe.notes,
+        })),
+      },
+      message: `Here's your scheduled ${todaysWorkout.workoutType} workout for today`,
     });
   },
 });
@@ -42,14 +112,14 @@ export const getTodaysWorkout = createTool({
 // Tool 7: Get Recent Workouts
 export const getRecentWorkouts = createTool({
   name: 'getRecentWorkouts',
-  description: 'Get recent completed workouts with exercises and sets',
+  description: 'Get recent completed workouts with exercises and sets. Use this when the user asks "what did I do this week", "show my recent workouts", "what have I been training", or when analyzing training history and progress.',
   parameters: z.object({
     limit: z.number().min(1).max(30).default(7).describe('Number of workouts to return'),
   }),
   execute: async (params, ctx) => {
     const recentWorkouts = await ctx.db.query.workouts.findMany({
       where: and(eq(workouts.userId, ctx.userId), eq(workouts.status, 'completed')),
-      orderBy: [desc(workouts.completedAt)],
+      orderBy: [desc(workouts.startedAt)],
       limit: params.limit,
     });
 
@@ -57,7 +127,7 @@ export const getRecentWorkouts = createTool({
       workouts: recentWorkouts.map(w => ({
         id: w.id,
         name: w.name,
-        date: w.completedAt ?? w.startedAt,
+        date: w.startedAt,
         duration: w.duration,
         notes: w.notes,
       })),
@@ -69,7 +139,7 @@ export const getRecentWorkouts = createTool({
 // Tool 8: Get Exercise History
 export const getExerciseHistory = createTool({
   name: 'getExerciseHistory',
-  description: 'Get history for a specific exercise including all sets, weights, and PRs',
+  description: 'Get history for a specific exercise including all sets, weights, and PRs. Use this when the user asks "what have I been lifting on bench press", "show my squat history", "how has my deadlift progressed", or when analyzing training progression for a specific exercise.',
   parameters: z.object({
     exerciseName: z.string().describe('Name of the exercise to get history for'),
     limit: z.number().min(1).max(100).default(20).describe('Number of sets to return'),
@@ -108,7 +178,7 @@ export const getExerciseHistory = createTool({
 // Tool 9: Get Personal Records
 export const getPersonalRecords = createTool({
   name: 'getPersonalRecords',
-  description: 'Get personal records for exercises',
+  description: 'Get personal records for exercises. Use this when the user asks "what are my PRs", "what is my max squat", "show my personal bests", "have I hit any PRs recently", or when celebrating training milestones.',
   parameters: z.object({
     exerciseName: z.string().optional().describe('Filter by specific exercise'),
   }),
@@ -224,7 +294,7 @@ export const getActiveWorkout = createTool({
 // Tool 12: Search Exercises
 export const searchExercises = createTool({
   name: 'searchExercises',
-  description: 'Search the exercise database by name, muscle group, or equipment',
+  description: 'SEARCH the exercise DATABASE to find exercises by name, muscle group, or equipment. This is the ONLY tool for finding/discovering new exercises. Use this when the user asks to "find exercises", "search for exercises", "what exercises target [muscle]", "show me [body part] exercises", "find chest exercises", "lookup squat variations", or any request to discover exercises in the database. Do NOT use getUserPreferences for exercise searches.',
   parameters: z.object({
     query: z.string().describe('Search query for exercise name'),
     muscleGroup: z.string().optional().describe('Filter by primary muscle group'),

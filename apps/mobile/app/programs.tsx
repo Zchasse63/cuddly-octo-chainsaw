@@ -1,5 +1,6 @@
-import { View, Text, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, FlatList, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import SegmentedControl from '@react-native-segmented-control/segmented-control';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -10,34 +11,23 @@ import {
   Footprints,
   ChevronRight,
   Sparkles,
-  Plus,
   CheckCircle2,
-  Play,
 } from 'lucide-react-native';
 import { useTheme } from '../src/theme/ThemeContext';
-import { Card, Button } from '../src/components/ui';
+import { Card } from '../src/components/ui';
 import { api } from '../src/lib/trpc';
 import { spacing, fontSize, fontWeight, borderRadius } from '../src/theme/tokens';
 
-type ProgramFilter = 'all' | 'strength' | 'running' | 'hybrid';
+type ProgramTab = 'active' | 'completed' | 'discover';
 
 export default function ProgramsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [filter, setFilter] = useState<ProgramFilter>('all');
+  const [selectedTab, setSelectedTab] = useState<ProgramTab>('active');
   const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch programs
+  // Fetch all programs
   const { data: allPrograms, isLoading, refetch } = api.calendar.listPrograms.useQuery();
-
-  // Filter programs based on selected filter
-  const programs = allPrograms?.filter((p) => {
-    if (filter === 'all') return true;
-    return p.programType === filter;
-  });
-
-  // Fetch active program
-  const { data: activeProgram } = api.calendar.getActiveProgram.useQuery();
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -45,21 +35,26 @@ export default function ProgramsScreen() {
     setRefreshing(false);
   };
 
-  const filterOptions: { value: ProgramFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'strength', label: 'Strength' },
-    { value: 'running', label: 'Running' },
-    { value: 'hybrid', label: 'Hybrid' },
-  ];
+  // Filter programs by tab
+  const programs = allPrograms?.filter((p) => {
+    if (selectedTab === 'active') {
+      return p.status !== 'completed' && p.status !== 'cancelled';
+    }
+    if (selectedTab === 'completed') {
+      return p.status === 'completed';
+    }
+    return false; // Discover tab doesn't filter existing programs
+  });
 
   const renderProgram = ({ item }: { item: any }) => {
-    const isActive = activeProgram?.id === item.id;
+    const isActive = item.status !== 'completed' && item.status !== 'cancelled';
+    const isCompleted = item.status === 'completed';
     const completedWorkouts = item.completedCount || 0;
     const totalWorkouts = item.totalCount || 0;
     const progressPercent = totalWorkouts > 0 ? (completedWorkouts / totalWorkouts) * 100 : 0;
 
     return (
-      <TouchableOpacity onPress={() => router.push(`/program-detail?id=${item.id}`)}>
+      <TouchableOpacity onPress={() => router.push(`/program/${item.id}` as any)}>
         <Card style={{ marginBottom: spacing.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <View
@@ -68,9 +63,9 @@ export default function ProgramsScreen() {
                 height: 48,
                 borderRadius: borderRadius.md,
                 backgroundColor: item.type === 'running'
-                  ? '#4ECDC420'
+                  ? colors.activity.running + '20'
                   : item.type === 'hybrid'
-                  ? '#FFE66D20'
+                  ? colors.activity.tempo + '20'
                   : colors.accent.blue + '20',
                 justifyContent: 'center',
                 alignItems: 'center',
@@ -78,9 +73,9 @@ export default function ProgramsScreen() {
               }}
             >
               {item.type === 'running' ? (
-                <Footprints size={24} color="#4ECDC4" />
+                <Footprints size={24} color={colors.activity.running} />
               ) : item.type === 'hybrid' ? (
-                <Sparkles size={24} color="#FFE66D" />
+                <Sparkles size={24} color={colors.activity.tempo} />
               ) : (
                 <Dumbbell size={24} color={colors.accent.blue} />
               )}
@@ -112,6 +107,9 @@ export default function ProgramsScreen() {
                     </Text>
                   </View>
                 )}
+                {isCompleted && (
+                  <CheckCircle2 size={20} color={colors.accent.green} />
+                )}
               </View>
 
               {item.description && (
@@ -138,8 +136,8 @@ export default function ProgramsScreen() {
                 </View>
               </View>
 
-              {/* Progress bar for active program */}
-              {isActive && totalWorkouts > 0 && (
+              {/* Progress bar for active/in-progress programs */}
+              {(isActive || isCompleted) && totalWorkouts > 0 && (
                 <View style={{ marginTop: spacing.sm }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
@@ -161,12 +159,18 @@ export default function ProgramsScreen() {
                       style={{
                         width: `${progressPercent}%`,
                         height: '100%',
-                        backgroundColor: colors.accent.green,
+                        backgroundColor: isCompleted ? colors.accent.green : colors.accent.blue,
                         borderRadius: 3,
                       }}
                     />
                   </View>
                 </View>
+              )}
+
+              {isCompleted && item.completedAt && (
+                <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary, marginTop: spacing.xs }}>
+                  Completed {new Date(item.completedAt).toLocaleDateString()}
+                </Text>
               )}
             </View>
 
@@ -205,111 +209,125 @@ export default function ProgramsScreen() {
         </Text>
       </View>
 
-      {/* Filter Tabs */}
-      <View
-        style={{
-          flexDirection: 'row',
-          padding: spacing.md,
-          gap: spacing.xs,
-        }}
-      >
-        {filterOptions.map((option) => (
-          <TouchableOpacity
-            key={option.value}
-            onPress={() => setFilter(option.value)}
-            style={{
-              flex: 1,
-              paddingVertical: spacing.sm,
-              borderRadius: borderRadius.md,
-              backgroundColor: filter === option.value ? colors.accent.blue : colors.background.secondary,
-              alignItems: 'center',
-            }}
-          >
-            <Text
-              style={{
-                fontSize: fontSize.sm,
-                fontWeight: fontWeight.medium,
-                color: filter === option.value ? colors.text.onAccent : colors.text.secondary,
-              }}
-            >
-              {option.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* Three-Tab Segmented Control */}
+      <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+        <SegmentedControl
+          values={['Active', 'Completed', 'Discover']}
+          selectedIndex={
+            selectedTab === 'active' ? 0 : selectedTab === 'completed' ? 1 : 2
+          }
+          onChange={(event: any) => {
+            const index = event.nativeEvent.selectedSegmentIndex;
+            setSelectedTab(index === 0 ? 'active' : index === 1 ? 'completed' : 'discover');
+          }}
+          style={{ height: 36 }}
+        />
       </View>
 
-      {/* Ask Coach to Generate */}
-      <TouchableOpacity
-        onPress={() => router.push('/(tabs)/chat')}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          marginHorizontal: spacing.md,
-          marginBottom: spacing.md,
-          padding: spacing.md,
-          backgroundColor: colors.accent.blue + '15',
-          borderRadius: borderRadius.lg,
-          borderWidth: 1,
-          borderColor: colors.accent.blue + '30',
-        }}
-      >
-        <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            backgroundColor: colors.accent.blue,
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginRight: spacing.md,
-          }}
-        >
-          <Sparkles size={20} color={colors.text.onAccent} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary }}>
-            Generate Custom Program
-          </Text>
-          <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>
-            Ask Coach to create a personalized training plan
-          </Text>
-        </View>
-        <ChevronRight size={20} color={colors.accent.blue} />
-      </TouchableOpacity>
+      {/* Tab Content */}
+      {selectedTab === 'discover' ? (
+        <ScrollView contentContainerStyle={{ padding: spacing.md }}>
+          {/* Ask Coach to Generate */}
+          <TouchableOpacity
+            onPress={() => router.push('/program-questionnaire' as any)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              padding: spacing.md,
+              backgroundColor: colors.accent.blue + '15',
+              borderRadius: borderRadius.lg,
+              borderWidth: 1,
+              borderColor: colors.accent.blue + '30',
+              marginBottom: spacing.lg,
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: colors.accent.blue,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginRight: spacing.md,
+              }}
+            >
+              <Sparkles size={20} color={colors.text.onAccent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary }}>
+                Generate Custom Program
+              </Text>
+              <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>
+                Answer a few questions to create a personalized training plan
+              </Text>
+            </View>
+            <ChevronRight size={20} color={colors.accent.blue} />
+          </TouchableOpacity>
 
-      {/* Program List */}
-      <FlatList
-        data={programs}
-        keyExtractor={(item) => item.id}
-        renderItem={renderProgram}
-        contentContainerStyle={{ padding: spacing.md }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', padding: spacing.xl }}>
-            {isLoading ? (
-              <Text style={{ color: colors.text.secondary }}>Loading programs...</Text>
-            ) : (
-              <>
-                <Calendar size={48} color={colors.text.disabled} />
-                <Text
-                  style={{
-                    fontSize: fontSize.lg,
-                    color: colors.text.secondary,
-                    marginTop: spacing.md,
-                  }}
-                >
-                  No programs yet
-                </Text>
-                <Text style={{ fontSize: fontSize.sm, color: colors.text.tertiary, textAlign: 'center' }}>
-                  Ask Coach to generate a personalized training program
-                </Text>
-              </>
-            )}
-          </View>
-        }
-      />
+          <Text
+            style={{
+              fontSize: fontSize.lg,
+              fontWeight: fontWeight.semibold,
+              color: colors.text.primary,
+              marginBottom: spacing.sm,
+            }}
+          >
+            AI Suggestions
+          </Text>
+
+          <Card style={{ marginBottom: spacing.sm }}>
+            <View style={{ alignItems: 'center', padding: spacing.md }}>
+              <Sparkles size={32} color={colors.text.disabled} />
+              <Text
+                style={{
+                  fontSize: fontSize.base,
+                  color: colors.text.tertiary,
+                  marginTop: spacing.sm,
+                  textAlign: 'center',
+                }}
+              >
+                Your coach will analyze your progress and suggest new programs tailored to your goals
+              </Text>
+            </View>
+          </Card>
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={programs}
+          keyExtractor={(item) => item.id}
+          renderItem={renderProgram}
+          contentContainerStyle={{ padding: spacing.md }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', padding: spacing.xl }}>
+              {isLoading ? (
+                <Text style={{ color: colors.text.secondary }}>Loading programs...</Text>
+              ) : (
+                <>
+                  <Calendar size={48} color={colors.text.disabled} />
+                  <Text
+                    style={{
+                      fontSize: fontSize.lg,
+                      color: colors.text.secondary,
+                      marginTop: spacing.md,
+                    }}
+                  >
+                    No {selectedTab} programs
+                  </Text>
+                  <Text style={{ fontSize: fontSize.sm, color: colors.text.tertiary, textAlign: 'center' }}>
+                    {selectedTab === 'active'
+                      ? 'Create a program to get started'
+                      : 'You haven\'t completed any programs yet'}
+                  </Text>
+                </>
+              )}
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }

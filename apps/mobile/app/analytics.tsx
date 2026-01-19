@@ -2,6 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { LineChart } from 'react-native-chart-kit';
 import {
   ArrowLeft,
   TrendingUp,
@@ -117,19 +118,19 @@ export default function AnalyticsScreen() {
             colors={colors}
           />
           <StatBox
-            icon={<Footprints size={20} color="#4ECDC4" />}
+            icon={<Footprints size={20} color={colors.activity.running} />}
             value={stats?.week?.workoutCount?.toString() || '0'}
             label="This Week"
             colors={colors}
           />
           <StatBox
-            icon={<Clock size={20} color="#FFE66D" />}
+            icon={<Clock size={20} color={colors.activity.tempo} />}
             value={formatHours(stats?.week?.totalDurationMinutes || 0)}
             label="Training Time"
             colors={colors}
           />
           <StatBox
-            icon={<Flame size={20} color="#FF6B6B" />}
+            icon={<Flame size={20} color={colors.activity.strength} />}
             value={stats?.activeGoals?.length?.toString() || '0'}
             label="Active Goals"
             colors={colors}
@@ -168,22 +169,60 @@ export default function AnalyticsScreen() {
               </View>
               <View style={{ flex: 1, alignItems: 'flex-end' }}>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>PRs Set</Text>
-                <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: '#FFE66D' }}>
+                <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.activity.tempo }}>
                   {stats?.today?.prCount || 0}
                 </Text>
               </View>
             </View>
           </Card>
 
-          {/* Volume Chart Placeholder */}
-          {weeklyVolume && weeklyVolume.length > 0 && (
+          {/* Volume Chart using react-native-chart-kit */}
+          {weeklyVolume && Array.isArray(weeklyVolume) && weeklyVolume.length > 0 && (
             <Card>
               <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.md }}>
                 Weekly Volume Trend
               </Text>
-              <View style={{ height: 120 }}>
-                <SimpleBarChart data={weeklyVolume.map((d) => ({ value: Number(d.volume) || 0, label: String(d.date || '') }))} colors={colors} color={colors.accent.blue} />
-              </View>
+              <LineChart
+                data={{
+                  labels: weeklyVolume.slice(-6).map((d: any) => {
+                    if (!d || typeof d !== 'object') return 'N/A';
+                    const dateStr = d.date || new Date().toISOString();
+                    const date = new Date(dateStr);
+                    return `${date.getMonth() + 1}/${date.getDate()}`;
+                  }),
+                  datasets: [
+                    {
+                      data: weeklyVolume.slice(-6).map((d: any) => {
+                        if (!d || typeof d !== 'object') return 0;
+                        return Number(d.volume) || 0;
+                      }),
+                    },
+                  ],
+                }}
+                width={screenWidth}
+                height={180}
+                chartConfig={{
+                  backgroundColor: colors.background.secondary,
+                  backgroundGradientFrom: colors.background.secondary,
+                  backgroundGradientTo: colors.background.secondary,
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => colors.accent.blue,
+                  labelColor: (opacity = 1) => colors.text.tertiary,
+                  style: {
+                    borderRadius: borderRadius.md,
+                  },
+                  propsForDots: {
+                    r: '4',
+                    strokeWidth: '2',
+                    stroke: colors.accent.blue,
+                  },
+                }}
+                bezier
+                style={{
+                  marginVertical: spacing.xs,
+                  borderRadius: borderRadius.md,
+                }}
+              />
             </Card>
           )}
         </View>
@@ -191,7 +230,7 @@ export default function AnalyticsScreen() {
         {/* Running Section */}
         <View style={{ marginBottom: spacing.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-            <Footprints size={18} color="#4ECDC4" />
+            <Footprints size={18} color={colors.activity.running} />
             <Text
               style={{
                 fontSize: fontSize.lg,
@@ -273,8 +312,8 @@ export default function AnalyticsScreen() {
                   </View>
                   {exerciseAnalytics.currentMaxWeight && (
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <Trophy size={14} color="#FFE66D" />
-                      <Text style={{ fontSize: fontSize.sm, color: '#FFE66D', marginLeft: spacing.xs }}>
+                      <Trophy size={14} color={colors.activity.tempo} />
+                      <Text style={{ fontSize: fontSize.sm, color: colors.activity.tempo, marginLeft: spacing.xs }}>
                         {formatWeight(exerciseAnalytics.currentMaxWeight, weightUnit)}
                       </Text>
                     </View>
@@ -289,7 +328,7 @@ export default function AnalyticsScreen() {
         <TouchableOpacity onPress={() => router.push('/personal-records')}>
           <Card style={{ marginBottom: spacing.lg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Trophy size={24} color="#FFE66D" />
+              <Trophy size={24} color={colors.activity.tempo} />
               <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary }}>
                   Personal Records
@@ -343,42 +382,6 @@ function StatBox({
   );
 }
 
-function SimpleBarChart({
-  data,
-  colors,
-  color,
-}: {
-  data: { value: number; label?: string }[];
-  colors: any;
-  color: string;
-}) {
-  const maxValue = Math.max(...data.map((d) => d.value), 1);
-
-  return (
-    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
-      {data.map((item, index) => {
-        const height = (item.value / maxValue) * 100;
-        return (
-          <View key={index} style={{ flex: 1, alignItems: 'center' }}>
-            <View
-              style={{
-                width: '80%',
-                height: `${Math.max(height, 5)}%`,
-                backgroundColor: color,
-                borderRadius: 4,
-              }}
-            />
-            {item.label && (
-              <Text style={{ fontSize: 10, color: colors.text.tertiary, marginTop: 4 }}>
-                {item.label}
-              </Text>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
 
 function formatHours(minutes: number): string {
   const hours = Math.floor(minutes / 60);

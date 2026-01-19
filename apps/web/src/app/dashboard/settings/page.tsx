@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -14,10 +14,22 @@ import {
   Mail,
   Smartphone,
   Save,
+  AlertCircle,
+  Loader,
+  CheckCircle,
+  Info,
 } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
+import { useToast } from '@/hooks/useToast';
+import { useTheme } from '@/providers/ThemeProvider';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const { showToast } = useToast();
+  const utils = trpc.useUtils();
+  const { theme, setTheme } = useTheme();
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -27,33 +39,167 @@ export default function SettingsPage() {
     { id: 'appearance', label: 'Appearance', icon: Palette },
   ];
 
+  const { data: userData, isLoading: isUserLoading, error: userError } = trpc.auth.me.useQuery();
+  const { data: notificationPrefs, isLoading: isLoadingPrefs } = trpc.coachDashboard.getNotificationPreferences.useQuery();
+
+  const updateProfileMutation = trpc.coachDashboard.updateProfile.useMutation({
+    onMutate: async (updatedProfile) => {
+      setIsSaving(true);
+      await utils.auth.me.cancel();
+      const previousProfile = utils.auth.me.getData();
+      utils.auth.me.setData(undefined, (old: any) => {
+        if (!old || !old.profile) return old;
+        return {
+          ...old,
+          profile: {
+            ...old.profile,
+            ...updatedProfile,
+          },
+        };
+      });
+      return { previousProfile };
+    },
+    onSuccess: () => {
+      setIsSaving(false);
+      setSaveSuccess(true);
+      showToast('Profile saved', 'success');
+      setTimeout(() => setSaveSuccess(false), 3000);
+    },
+    onError: (error: any, updatedProfile: any, context: any) => {
+      setIsSaving(false);
+      if (context?.previousProfile) {
+        utils.auth.me.setData(undefined, context.previousProfile);
+      }
+      showToast('Failed to save profile', 'error');
+      setSaveSuccess(false);
+    },
+    onSettled: () => {
+      utils.auth.me.invalidate();
+    },
+  });
+
+  const updateNotificationsMutation = trpc.coachDashboard.updateNotificationPreferences.useMutation({
+    onSuccess: () => {
+      showToast('Notification preferences saved', 'success');
+      utils.coachDashboard.getNotificationPreferences.invalidate();
+    },
+    onError: () => {
+      showToast('Failed to save preferences', 'error');
+    },
+  });
+
+  const changePasswordMutation = trpc.auth.changePassword.useMutation({
+    onSuccess: () => {
+      showToast('Password changed successfully', 'success');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
+    },
+    onError: (error) => {
+      showToast(error.message || 'Failed to change password', 'error');
+    },
+  });
+
   const [profile, setProfile] = useState({
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '+1 (555) 123-4567',
-    bio: 'Certified personal trainer with 10+ years of experience. Specializing in strength training and body composition.',
-    website: 'https://johndoe.fitness',
+    name: '',
+    phone: '',
+    website: '',
   });
 
   const [notifications, setNotifications] = useState({
-    emailWorkouts: true,
-    emailMessages: true,
-    emailWeekly: true,
-    pushWorkouts: true,
-    pushMessages: true,
-    pushReminders: false,
+    emailNotifications: true,
+    pushNotifications: true,
+    smsNotifications: false,
+    weeklyDigest: true,
   });
+
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmNewPassword: '',
+  });
+
+  // Update state when data loads
+  useEffect(() => {
+    if (userData?.profile) {
+      setProfile({
+        name: userData.profile.name || '',
+        phone: '',
+        website: '',
+      });
+    }
+  }, [userData]);
+
+  useEffect(() => {
+    if (notificationPrefs) {
+      setNotifications({
+        emailNotifications: notificationPrefs.emailNotifications,
+        pushNotifications: notificationPrefs.pushNotifications,
+        smsNotifications: notificationPrefs.smsNotifications,
+        weeklyDigest: notificationPrefs.weeklyDigest,
+      });
+    }
+  }, [notificationPrefs]);
+
+  const handleSaveProfile = async () => {
+    try {
+      await updateProfileMutation.mutateAsync({
+        name: profile.name,
+      });
+    } catch (err) {
+      // Error handled by mutation
+    }
+  };
+
+  const handleSaveNotifications = async () => {
+    await updateNotificationsMutation.mutateAsync(notifications);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (passwordForm.newPassword !== passwordForm.confirmNewPassword) {
+      showToast('Passwords do not match', 'error');
+      return;
+    }
+
+    await changePasswordMutation.mutateAsync({
+      currentPassword: passwordForm.currentPassword,
+      newPassword: passwordForm.newPassword,
+    });
+  };
+
+  if (userError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Settings</h1>
+          <p className="text-text-secondary">Manage your account and preferences</p>
+        </div>
+        <Card variant="bordered" padding="lg" className="border-accent-red/20 bg-accent-red/5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-accent-red flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-accent-red">Failed to load settings</h3>
+              <p className="text-sm text-text-secondary mt-1">
+                {userError.message || 'Unable to fetch your profile. Please try again later.'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  const currentUser = userData?.user;
+  const currentProfile = userData?.profile;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-text-secondary">Manage your account and preferences</p>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6">
-        {/* Tabs Navigation */}
         <Card variant="bordered" padding="sm" className="lg:w-64 h-fit">
           <nav className="space-y-1">
             {tabs.map((tab) => (
@@ -73,71 +219,98 @@ export default function SettingsPage() {
           </nav>
         </Card>
 
-        {/* Content */}
         <div className="flex-1">
           {activeTab === 'profile' && (
             <Card variant="default" padding="lg">
               <h2 className="text-lg font-semibold mb-6">Profile Information</h2>
-              <div className="space-y-6">
-                <div className="flex items-center gap-6">
-                  <div className="w-20 h-20 rounded-full bg-accent-blue flex items-center justify-center text-white text-2xl font-bold">
-                    JD
+              {isUserLoading ? (
+                <div className="space-y-4">
+                  <div className="h-8 bg-background-tertiary rounded w-32 mb-6" />
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="h-10 bg-background-tertiary rounded" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-6">
+                    <div className="w-20 h-20 rounded-full bg-accent-blue flex items-center justify-center text-white text-2xl font-bold">
+                      {currentProfile?.name?.split(' ').slice(0, 2).map(n => n[0]).join('') || 'U'}
+                    </div>
+                    <div>
+                      <Button variant="outline" size="sm">
+                        Change Photo
+                      </Button>
+                      <p className="text-sm text-text-secondary mt-2">
+                        JPG, PNG or GIF. Max 2MB.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <Button variant="outline" size="sm">
-                      Change Photo
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <Input
+                      label="Full Name"
+                      value={profile.name}
+                      onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                      disabled={updateProfileMutation.isPending}
+                    />
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={currentUser?.email || ''}
+                      disabled
+                    />
+                    <Input
+                      label="Phone"
+                      type="tel"
+                      value={profile.phone}
+                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                      disabled={updateProfileMutation.isPending}
+                    />
+                    <Input
+                      label="Website"
+                      type="url"
+                      value={profile.website}
+                      onChange={(e) => setProfile({ ...profile, website: e.target.value })}
+                      disabled={updateProfileMutation.isPending}
+                    />
+                  </div>
+
+                  {updateProfileMutation.error && (
+                    <div className="p-4 bg-accent-red/5 border border-accent-red/20 rounded-xl flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-accent-red flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-accent-red">Failed to save changes. Please try again.</p>
+                    </div>
+                  )}
+
+                  {saveSuccess && (
+                    <div className="p-4 bg-accent-green/5 border border-accent-green/20 rounded-xl flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-accent-green flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-accent-green">Profile updated successfully!</p>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <Button onClick={handleSaveProfile} disabled={updateProfileMutation.isPending || isSaving}>
+                      {isSaving ? (
+                        <>
+                          <Loader className="w-4 h-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : saveSuccess ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Saved ✓
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          Save Changes
+                        </>
+                      )}
                     </Button>
-                    <p className="text-sm text-text-secondary mt-2">
-                      JPG, PNG or GIF. Max 2MB.
-                    </p>
                   </div>
                 </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <Input
-                    label="Full Name"
-                    value={profile.name}
-                    onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                  />
-                  <Input
-                    label="Email"
-                    type="email"
-                    value={profile.email}
-                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  />
-                  <Input
-                    label="Phone"
-                    type="tel"
-                    value={profile.phone}
-                    onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                  />
-                  <Input
-                    label="Website"
-                    type="url"
-                    value={profile.website}
-                    onChange={(e) => setProfile({ ...profile, website: e.target.value })}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-2">
-                    Bio
-                  </label>
-                  <textarea
-                    value={profile.bio}
-                    onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-                    rows={4}
-                    className="w-full px-4 py-3 rounded-xl bg-background-secondary border border-transparent focus:outline-none focus:ring-2 focus:ring-accent-blue resize-none"
-                  />
-                </div>
-
-                <div className="flex justify-end">
-                  <Button>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
-                  </Button>
-                </div>
-              </div>
+              )}
             </Card>
           )}
 
@@ -145,88 +318,87 @@ export default function SettingsPage() {
             <Card variant="default" padding="lg">
               <h2 className="text-lg font-semibold mb-6">Notification Preferences</h2>
 
-              <div className="space-y-6">
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Mail className="w-5 h-5 text-text-secondary" />
-                    <h3 className="font-medium">Email Notifications</h3>
+              {isLoadingPrefs ? (
+                <div className="space-y-4">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="h-6 bg-background-tertiary rounded" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Mail className="w-5 h-5 text-text-secondary" />
+                      <h3 className="font-medium">Email Notifications</h3>
+                    </div>
+                    <div className="space-y-3 ml-7">
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <span className="text-text-secondary">All email notifications</span>
+                        <input
+                          type="checkbox"
+                          checked={notifications.emailNotifications}
+                          onChange={(e) => setNotifications({ ...notifications, emailNotifications: e.target.checked })}
+                          className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <span className="text-text-secondary">Weekly summary reports</span>
+                        <input
+                          type="checkbox"
+                          checked={notifications.weeklyDigest}
+                          onChange={(e) => setNotifications({ ...notifications, weeklyDigest: e.target.checked })}
+                          className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
+                        />
+                      </label>
+                    </div>
                   </div>
-                  <div className="space-y-3 ml-7">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-text-secondary">Client workout completions</span>
-                      <input
-                        type="checkbox"
-                        checked={notifications.emailWorkouts}
-                        onChange={(e) => setNotifications({ ...notifications, emailWorkouts: e.target.checked })}
-                        className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-text-secondary">New messages</span>
-                      <input
-                        type="checkbox"
-                        checked={notifications.emailMessages}
-                        onChange={(e) => setNotifications({ ...notifications, emailMessages: e.target.checked })}
-                        className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-text-secondary">Weekly summary reports</span>
-                      <input
-                        type="checkbox"
-                        checked={notifications.emailWeekly}
-                        onChange={(e) => setNotifications({ ...notifications, emailWeekly: e.target.checked })}
-                        className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
-                      />
-                    </label>
+
+                  <hr className="border-background-tertiary" />
+
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Smartphone className="w-5 h-5 text-text-secondary" />
+                      <h3 className="font-medium">Push Notifications</h3>
+                    </div>
+                    <div className="space-y-3 ml-7">
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <span className="text-text-secondary">Push notifications</span>
+                        <input
+                          type="checkbox"
+                          checked={notifications.pushNotifications}
+                          onChange={(e) => setNotifications({ ...notifications, pushNotifications: e.target.checked })}
+                          className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <span className="text-text-secondary">SMS notifications</span>
+                        <input
+                          type="checkbox"
+                          checked={notifications.smsNotifications}
+                          onChange={(e) => setNotifications({ ...notifications, smsNotifications: e.target.checked })}
+                          className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button onClick={handleSaveNotifications} disabled={updateNotificationsMutation.isPending}>
+                      {updateNotificationsMutation.isPending ? (
+                        <>
+                          <Loader className="w-4 h-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          Save Preferences
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
-
-                <hr className="border-background-tertiary" />
-
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Smartphone className="w-5 h-5 text-text-secondary" />
-                    <h3 className="font-medium">Push Notifications</h3>
-                  </div>
-                  <div className="space-y-3 ml-7">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-text-secondary">Client workout updates</span>
-                      <input
-                        type="checkbox"
-                        checked={notifications.pushWorkouts}
-                        onChange={(e) => setNotifications({ ...notifications, pushWorkouts: e.target.checked })}
-                        className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-text-secondary">New messages</span>
-                      <input
-                        type="checkbox"
-                        checked={notifications.pushMessages}
-                        onChange={(e) => setNotifications({ ...notifications, pushMessages: e.target.checked })}
-                        className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-text-secondary">Session reminders</span>
-                      <input
-                        type="checkbox"
-                        checked={notifications.pushReminders}
-                        onChange={(e) => setNotifications({ ...notifications, pushReminders: e.target.checked })}
-                        className="w-5 h-5 rounded text-accent-blue focus:ring-accent-blue"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Preferences
-                  </Button>
-                </div>
-              </div>
+              )}
             </Card>
           )}
 
@@ -237,24 +409,45 @@ export default function SettingsPage() {
               <div className="space-y-6">
                 <div>
                   <h3 className="font-medium mb-4">Change Password</h3>
-                  <div className="space-y-4 max-w-md">
+                  <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
                     <Input
                       label="Current Password"
                       type="password"
                       placeholder="Enter current password"
+                      value={passwordForm.currentPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                      required
                     />
                     <Input
                       label="New Password"
                       type="password"
                       placeholder="Enter new password"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      required
                     />
+                    <div className="text-xs text-text-secondary ml-1">
+                      Must be 8+ characters with uppercase, lowercase, number, and special character
+                    </div>
                     <Input
                       label="Confirm New Password"
                       type="password"
                       placeholder="Confirm new password"
+                      value={passwordForm.confirmNewPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmNewPassword: e.target.value })}
+                      required
                     />
-                    <Button>Update Password</Button>
-                  </div>
+                    <Button type="submit" disabled={changePasswordMutation.isPending}>
+                      {changePasswordMutation.isPending ? (
+                        <>
+                          <Loader className="w-4 h-4 mr-2 animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        'Update Password'
+                      )}
+                    </Button>
+                  </form>
                 </div>
 
                 <hr className="border-background-tertiary" />
@@ -266,39 +459,27 @@ export default function SettingsPage() {
                   </p>
                   <Button variant="outline">Enable 2FA</Button>
                 </div>
-
-                <hr className="border-background-tertiary" />
-
-                <div>
-                  <h3 className="font-medium mb-4">Active Sessions</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-4 bg-background-secondary rounded-xl">
-                      <div>
-                        <p className="font-medium">MacBook Pro - Chrome</p>
-                        <p className="text-sm text-text-secondary">San Francisco, CA • Current session</p>
-                      </div>
-                      <span className="px-2 py-1 bg-accent-green/10 text-accent-green rounded text-sm">Active</span>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-background-secondary rounded-xl">
-                      <div>
-                        <p className="font-medium">iPhone 14 Pro - Safari</p>
-                        <p className="text-sm text-text-secondary">San Francisco, CA • 2 hours ago</p>
-                      </div>
-                      <Button variant="ghost" size="sm" className="text-accent-red">
-                        Revoke
-                      </Button>
-                    </div>
-                  </div>
-                </div>
               </div>
             </Card>
           )}
 
           {activeTab === 'billing' && (
             <Card variant="default" padding="lg">
-              <h2 className="text-lg font-semibold mb-6">Billing & Subscription</h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold">Billing & Subscription</h2>
+                <span className="px-3 py-1 bg-accent-orange/10 text-accent-orange rounded-full text-sm font-medium">
+                  Coming Soon
+                </span>
+              </div>
 
-              <div className="space-y-6">
+              <div className="p-4 bg-accent-blue/5 border border-accent-blue/20 rounded-xl mb-6 flex items-start gap-3">
+                <Info className="w-5 h-5 text-accent-blue flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-text-secondary">
+                  Contact <strong className="text-accent-blue">support@voicefit.com</strong> to manage billing
+                </p>
+              </div>
+
+              <div className="space-y-6 opacity-50 pointer-events-none">
                 <div className="p-6 bg-accent-blue/5 border border-accent-blue/20 rounded-2xl">
                   <div className="flex items-center justify-between mb-4">
                     <div>
@@ -307,7 +488,7 @@ export default function SettingsPage() {
                       </span>
                       <p className="text-2xl font-bold mt-2">$49/month</p>
                     </div>
-                    <Button variant="outline">Change Plan</Button>
+                    <Button variant="outline" disabled>Change Plan</Button>
                   </div>
                   <p className="text-text-secondary">
                     Your next billing date is <strong>December 15, 2024</strong>
@@ -326,29 +507,7 @@ export default function SettingsPage() {
                         <p className="text-sm text-text-secondary">Expires 12/25</p>
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm">Update</Button>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="font-medium mb-4">Billing History</h3>
-                  <div className="space-y-2">
-                    {[
-                      { date: 'Nov 15, 2024', amount: '$49.00', status: 'Paid' },
-                      { date: 'Oct 15, 2024', amount: '$49.00', status: 'Paid' },
-                      { date: 'Sep 15, 2024', amount: '$49.00', status: 'Paid' },
-                    ].map((invoice, index) => (
-                      <div key={index} className="flex items-center justify-between p-4 bg-background-secondary rounded-xl">
-                        <div>
-                          <p className="font-medium">{invoice.date}</p>
-                          <p className="text-sm text-text-secondary">{invoice.amount}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm text-accent-green">{invoice.status}</span>
-                          <Button variant="ghost" size="sm">Download</Button>
-                        </div>
-                      </div>
-                    ))}
+                    <Button variant="ghost" size="sm" disabled>Update</Button>
                   </div>
                 </div>
               </div>
@@ -363,19 +522,20 @@ export default function SettingsPage() {
                 <div>
                   <h3 className="font-medium mb-4">Theme</h3>
                   <div className="grid grid-cols-3 gap-4">
-                    {['Light', 'Dark', 'System'].map((theme) => (
+                    {(['light', 'dark', 'system'] as const).map((themeOption) => (
                       <button
-                        key={theme}
+                        key={themeOption}
+                        onClick={() => setTheme(themeOption)}
                         className={`p-4 rounded-xl border-2 transition-colors ${
-                          theme === 'Light'
+                          theme === themeOption
                             ? 'border-accent-blue bg-accent-blue/5'
                             : 'border-background-tertiary hover:border-text-tertiary'
                         }`}
                       >
                         <div className={`w-full h-16 rounded-lg mb-3 ${
-                          theme === 'Dark' ? 'bg-gray-900' : 'bg-white border border-background-tertiary'
+                          themeOption === 'dark' ? 'bg-gray-900' : 'bg-white border border-background-tertiary'
                         }`} />
-                        <p className="font-medium">{theme}</p>
+                        <p className="font-medium capitalize">{themeOption}</p>
                       </button>
                     ))}
                   </div>
@@ -412,13 +572,6 @@ export default function SettingsPage() {
                       </select>
                     </div>
                   </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Preferences
-                  </Button>
                 </div>
               </div>
             </Card>

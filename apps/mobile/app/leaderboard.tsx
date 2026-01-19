@@ -17,7 +17,7 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { Card, Button } from '../src/components/ui';
 import { api } from '../src/lib/trpc';
 import { useDistanceUnit, formatDistance, useWeightUnit, formatWeight } from '../src/stores/profile';
-import { spacing, fontSize, fontWeight, borderRadius, heights } from '../src/theme/tokens';
+import { spacing, fontSize, fontWeight, borderRadius, heights, medalColors } from '../src/theme/tokens';
 
 type LeaderboardType = 'workouts' | 'volume' | 'distance' | 'streak';
 type TimeFrame = 'week' | 'month' | 'all';
@@ -51,9 +51,9 @@ export default function LeaderboardScreen() {
 
   const typeOptions: { value: LeaderboardType; label: string; icon: React.ReactNode }[] = [
     { value: 'workouts', label: 'Workouts', icon: <Dumbbell size={16} color={colors.accent.blue} /> },
-    { value: 'volume', label: 'Volume', icon: <TrendingUp size={16} color="#FFE66D" /> },
-    { value: 'distance', label: 'Distance', icon: <Footprints size={16} color="#4ECDC4" /> },
-    { value: 'streak', label: 'Streak', icon: <Flame size={16} color="#FF6B6B" /> },
+    { value: 'volume', label: 'Volume', icon: <TrendingUp size={16} color={colors.activity.tempo} /> },
+    { value: 'distance', label: 'Distance', icon: <Footprints size={16} color={colors.activity.running} /> },
+    { value: 'streak', label: 'Streak', icon: <Flame size={16} color={colors.activity.strength} /> },
   ];
 
   const timeFrameOptions: { value: TimeFrame; label: string }[] = [
@@ -80,11 +80,11 @@ export default function LeaderboardScreen() {
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1:
-        return <Crown size={24} color="#FFD700" />;
+        return <Crown size={24} color={medalColors.gold} />;
       case 2:
-        return <Medal size={24} color="#C0C0C0" />;
+        return <Medal size={24} color={medalColors.silver} />;
       case 3:
-        return <Medal size={24} color="#CD7F32" />;
+        return <Medal size={24} color={medalColors.bronze} />;
       default:
         return null;
     }
@@ -93,11 +93,11 @@ export default function LeaderboardScreen() {
   const getRankColor = (rank: number) => {
     switch (rank) {
       case 1:
-        return '#FFD700';
+        return medalColors.gold;
       case 2:
-        return '#C0C0C0';
+        return medalColors.silver;
       case 3:
-        return '#CD7F32';
+        return medalColors.bronze;
       default:
         return colors.text.secondary;
     }
