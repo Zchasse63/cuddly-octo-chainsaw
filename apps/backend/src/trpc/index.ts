@@ -19,8 +19,13 @@ export async function createContext(opts?: { req: Request }): Promise<Context> {
 
   if (opts?.req) {
     try {
-      const authHeader = opts.req.headers.get('authorization');
-      if (authHeader) {
+      // Handle both Node.js http.IncomingMessage (object) and Fetch API Request (Headers instance)
+      const headers = opts.req.headers;
+      const authHeader = typeof headers.get === 'function'
+        ? headers.get('authorization')
+        : (headers as Record<string, string | string[] | undefined>)['authorization'];
+
+      if (authHeader && typeof authHeader === 'string') {
         user = await getUserFromHeader(authHeader);
       }
     } catch {

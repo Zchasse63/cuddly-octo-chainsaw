@@ -1,14 +1,19 @@
 import 'dotenv/config';
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
+import cors from 'cors';
 import { appRouter } from './routers';
 import { createContext } from './trpc';
 
 const PORT = process.env.PORT || 3001;
 
-// Create HTTP server
+// Create HTTP server with CORS
 const server = createHTTPServer({
   router: appRouter,
   createContext: ({ req }) => createContext({ req: req as unknown as Request }),
+  middleware: cors({
+    origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    credentials: true,
+  }),
   onError({ error, path }) {
     console.error(`[tRPC Error] ${path}:`, error.message);
   },
