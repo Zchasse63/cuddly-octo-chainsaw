@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure, publicProcedure } from '../trpc';
 import { exerciseSubstitutions, exerciseBodyPartStress, exercises } from '../db/schema';
+import { muscleGroupEnum } from '../db/schema/exercises';
 import { eq, and } from 'drizzle-orm';
 import { createExerciseMatcher } from '../services/exerciseMatcher';
 
@@ -173,7 +174,7 @@ export const substitutionsRouter = router({
       // Get exercises that don't have high stress on injured parts
       const allExercises = await ctx.db.query.exercises.findMany({
         where: input.muscleGroup
-          ? eq(exercises.primaryMuscle, input.muscleGroup as any)
+          ? eq(exercises.primaryMuscle, input.muscleGroup as typeof muscleGroupEnum.enumValues[number])
           : undefined,
         limit: 100,
       });

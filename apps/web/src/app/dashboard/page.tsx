@@ -91,8 +91,8 @@ export default function DashboardPage() {
     },
     {
       name: 'Monthly Revenue',
-      value: '$0',
-      change: '+0%',
+      value: `$${data?.monthlyRevenue?.toLocaleString() || '0'}`,
+      change: data?.monthlyRevenue ? '+0%' : '--',
       changeType: 'increase',
       icon: DollarSign,
       color: 'bg-accent-green',

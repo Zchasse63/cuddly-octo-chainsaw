@@ -23,7 +23,7 @@ export async function createContext(opts?: { req: Request }): Promise<Context> {
       const headers = opts.req.headers;
       const authHeader = typeof headers.get === 'function'
         ? headers.get('authorization')
-        : (headers as Record<string, string | string[] | undefined>)['authorization'];
+        : (headers as unknown as Record<string, string | string[] | undefined>)['authorization'];
 
       if (authHeader && typeof authHeader === 'string') {
         user = await getUserFromHeader(authHeader);
@@ -90,8 +90,13 @@ export const loggedProcedure = t.procedure.use(async ({ path, type, next }) => {
 // Creates a middleware that enforces rate limits based on user ID or IP
 const createRateLimitMiddleware = (limit: number, windowSeconds: number) =>
   t.middleware(async ({ ctx, next, path }) => {
-    // Use user ID if authenticated, otherwise use a hash of path for public routes
-    const identifier = ctx.user?.id || `anon:${path}`;
+    // Use user ID if authenticated, otherwise use client IP for anonymous users
+    const clientIp = ctx.req
+      ? (ctx.req.headers as unknown as Record<string, string | string[] | undefined>)['x-forwarded-for']?.toString().split(',')[0]?.trim()
+        || (ctx.req.headers as unknown as Record<string, string | string[] | undefined>)['x-real-ip']?.toString()
+        || 'unknown'
+      : 'unknown';
+    const identifier = ctx.user?.id || `anon:${clientIp}:${path}`;
 
     const result = await rateLimit.check(identifier, limit, windowSeconds);
 

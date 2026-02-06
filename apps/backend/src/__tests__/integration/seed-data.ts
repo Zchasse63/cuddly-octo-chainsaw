@@ -33,6 +33,7 @@ import {
   coachNotes,
   conversations,
   messages,
+  userOnboarding,
 } from '../../db/schema';
 
 // ============================================
@@ -556,6 +557,29 @@ export async function seedConversations(coachId: string, clientId: string): Prom
 }
 
 // ============================================
+// ONBOARDING DATA
+// ============================================
+async function seedOnboarding(userId: string): Promise<void> {
+  // Check if already seeded
+  const existing = await db.query.userOnboarding.findFirst({
+    where: eq(userOnboarding.userId, userId),
+  });
+  if (existing) {
+    console.log(`[Seed] Onboarding already exists for ${userId}, skipping`);
+    return;
+  }
+
+  await db.insert(userOnboarding).values({
+    userId,
+    currentStep: 'welcome',
+    stepsCompleted: [],
+    isComplete: false,
+  });
+
+  console.log(`[Seed] Onboarding record created for ${userId}`);
+}
+
+// ============================================
 // MAIN SEED FUNCTION
 // ============================================
 export async function seedAllData(): Promise<void> {
@@ -597,7 +621,12 @@ export async function seedAllData(): Promise<void> {
   await seedStreaksAndBadges(client1Id);
   await seedStreaksAndBadges(client2Id);
 
-  // 9. Seed conversations
+  // 9. Seed onboarding records
+  await seedOnboarding(premiumAthleteId);
+  await seedOnboarding(client1Id);
+  await seedOnboarding(client2Id);
+
+  // 10. Seed conversations
   await seedConversations(coachId, client1Id);
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);

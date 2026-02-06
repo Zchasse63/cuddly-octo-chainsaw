@@ -121,7 +121,7 @@ export function useAudioCues(config: Partial<AudioCueConfig> = {}) {
         // );
 
         // Placeholder: Log the sound that would play
-        console.log(`[Audio] Would play: ${soundFile}`);
+        // TODO: Implement actual audio playback
 
         // Trigger haptic feedback
         if (mergedConfig.hapticEnabled) {
@@ -182,7 +182,7 @@ export function useAudioCues(config: Partial<AudioCueConfig> = {}) {
     // });
 
     // Placeholder: Log the text that would be spoken
-    console.log(`[TTS] Would speak: ${announcement.text}`);
+    // TODO: Implement actual TTS playback
 
     // Simulate speech duration
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -310,7 +310,7 @@ function triggerHaptic(cueType: AudioCueType) {
   //     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   // }
 
-  console.log(`[Haptic] Would trigger for: ${cueType}`);
+  // TODO: Implement actual haptic feedback
 }
 
 export default useAudioCues;

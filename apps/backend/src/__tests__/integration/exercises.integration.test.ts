@@ -48,7 +48,7 @@ describe('Exercises Integration', () => {
 
       const found = await db.query.exercises.findMany({
         where: eq(exercises.primaryMuscle, 'quadriceps'),
-        limit: 10,
+        limit: 100,
       });
 
       expect(found.length).toBeGreaterThan(0);

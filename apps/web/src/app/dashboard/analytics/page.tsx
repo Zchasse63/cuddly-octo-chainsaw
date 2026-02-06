@@ -184,7 +184,7 @@ export default function AnalyticsPage() {
             </Card>
           ) : aiInsights && aiInsights.insights.length > 0 ? (
             <div className="space-y-3">
-              {aiInsights.insights.map((insight: { id: string; title: string; description: string; priority: 'high' | 'medium' | 'low'; clientIds: string[] }) => {
+              {(aiInsights.insights as Array<{ id: string; title: string; description: string; priority: 'high' | 'medium' | 'low'; clientIds: string[] }>).map((insight) => {
                 const priorityColors: Record<'high' | 'medium' | 'low', string> = {
                   high: 'border-accent-red/30 bg-accent-red/5 text-accent-red',
                   medium: 'border-accent-orange/30 bg-accent-orange/5 text-accent-orange',

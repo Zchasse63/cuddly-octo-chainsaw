@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { exercises } from '../db/schema';
 import { eq, ilike, or, sql } from 'drizzle-orm';
 import { cache } from '../lib/upstash';
+import { muscleGroupEnum } from '../db/schema/exercises';
 
 // Cache TTLs (in seconds)
 const CACHE_TTL = {
@@ -32,7 +34,7 @@ export const exerciseRouter = router({
       const conditions = [];
 
       if (muscleGroup) {
-        conditions.push(eq(exercises.primaryMuscle, muscleGroup as any));
+        conditions.push(eq(exercises.primaryMuscle, muscleGroup as typeof muscleGroupEnum.enumValues[number]));
       }
 
       if (search) {
@@ -68,7 +70,7 @@ export const exerciseRouter = router({
       });
 
       if (!exercise) {
-        throw new Error('Exercise not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Exercise not found' });
       }
 
       // Cache the result
@@ -179,7 +181,7 @@ export const exerciseRouter = router({
       });
 
       if (!original) {
-        throw new Error('Exercise not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Exercise not found' });
       }
 
       // Find exercises with same primary muscle
@@ -217,7 +219,7 @@ export const exerciseRouter = router({
       });
 
       if (!exercise) {
-        throw new Error('Exercise not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Exercise not found' });
       }
 
       // Fetch exercise cues from database

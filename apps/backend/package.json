@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@ai-sdk/xai": "^2.0.39",
-    "@supabase/supabase-js": "^2.45.0",
+    "@supabase/supabase-js": "^2.49.1",
     "@trpc/server": "^11.0.0-rc.446",
     "@upstash/redis": "^1.35.7",
     "@upstash/search": "^0.1.7",
@@ -34,8 +34,8 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/node": "^20.14.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.49.0",
+    "@typescript-eslint/parser": "^8.49.0",
     "@vitest/coverage-v8": "^4.0.14",
     "drizzle-kit": "^0.24.0",
     "eslint": "^8.57.0",

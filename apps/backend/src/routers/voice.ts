@@ -1,20 +1,35 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
+import { TRPCError } from '@trpc/server';
 import { parseVoiceCommand, generateConfirmation } from '../services/voiceParser';
 import { exercises, workoutSets } from '../db/schema';
 import { eq, desc, and, ilike, or, sql } from 'drizzle-orm';
+import { redis } from '../lib/upstash';
+import { calculate1RM } from '../lib/formulas';
 
-// Voice session state (in production, use Redis)
-const sessionState = new Map<
-  string,
-  {
-    currentExercise?: string;
-    currentExerciseId?: string;
-    lastWeight?: number;
-    lastWeightUnit?: string;
-    setCount: number;
-  }
->();
+// Voice session state stored in Redis with 2-hour TTL
+const SESSION_TTL = 7200; // 2 hours in seconds
+
+export interface VoiceSession {
+  currentExercise?: string;
+  currentExerciseId?: string;
+  lastWeight?: number;
+  lastWeightUnit?: string;
+  setCount: number;
+}
+
+function sessionKey(userId: string, workoutId: string): string {
+  return `voice:session:${userId}:${workoutId}`;
+}
+
+async function getSession(userId: string, workoutId: string): Promise<VoiceSession> {
+  const data = await redis.get<VoiceSession>(sessionKey(userId, workoutId));
+  return data || { setCount: 0 };
+}
+
+async function setSession(userId: string, workoutId: string, session: VoiceSession): Promise<void> {
+  await redis.set(sessionKey(userId, workoutId), session, { ex: SESSION_TTL });
+}
 
 export const voiceRouter = router({
   // Parse voice command
@@ -26,9 +41,8 @@ export const voiceRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Get session context
-      const sessionKey = `${ctx.user.id}:${input.workoutId}`;
-      const session = sessionState.get(sessionKey) || { setCount: 0 };
+      // Get session context from Redis
+      const session = await getSession(ctx.user.id, input.workoutId);
 
       // Get user's preferred unit
       const profile = await ctx.db.query.userProfiles.findFirst({
@@ -92,8 +106,7 @@ export const voiceRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const sessionKey = `${ctx.user.id}:${input.workoutId}`;
-      const session = sessionState.get(sessionKey) || { setCount: 0 };
+      const session = await getSession(ctx.user.id, input.workoutId);
 
       // Increment set count
       session.setCount += 1;
@@ -105,9 +118,9 @@ export const voiceRouter = router({
         where: eq(exercises.id, input.exerciseId),
       });
 
-      // Calculate 1RM
+      // Calculate 1RM (Epley formula)
       const estimated1rm = input.weight
-        ? input.weight * (1 + input.reps / 30)
+        ? calculate1RM(input.weight, input.reps)
         : null;
 
       // Check for PR
@@ -142,8 +155,8 @@ export const voiceRouter = router({
         })
         .returning();
 
-      // Update session state
-      sessionState.set(sessionKey, session);
+      // Update session state in Redis
+      await setSession(ctx.user.id, input.workoutId, session);
 
       // Generate confirmation message
       const confirmation = generateConfirmation({
@@ -177,7 +190,10 @@ export const voiceRouter = router({
       });
 
       if (!exercise) {
-        throw new Error('Exercise not found');
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Exercise not found',
+        });
       }
 
       // Get last weight for this exercise
@@ -189,8 +205,7 @@ export const voiceRouter = router({
         orderBy: [desc(workoutSets.createdAt)],
       });
 
-      const sessionKey = `${ctx.user.id}:${input.workoutId}`;
-      sessionState.set(sessionKey, {
+      await setSession(ctx.user.id, input.workoutId, {
         currentExercise: exercise.name,
         currentExerciseId: exercise.id,
         lastWeight: lastSet?.weight || undefined,
@@ -209,16 +224,15 @@ export const voiceRouter = router({
   session: protectedProcedure
     .input(z.object({ workoutId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const sessionKey = `${ctx.user.id}:${input.workoutId}`;
-      return sessionState.get(sessionKey) || null;
+      const session = await redis.get<VoiceSession>(sessionKey(ctx.user.id, input.workoutId));
+      return session || null;
     }),
 
   // Clear session
   clearSession: protectedProcedure
     .input(z.object({ workoutId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const sessionKey = `${ctx.user.id}:${input.workoutId}`;
-      sessionState.delete(sessionKey);
+      await redis.del(sessionKey(ctx.user.id, input.workoutId));
       return { success: true };
     }),
 });

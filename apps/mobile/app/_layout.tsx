@@ -1,6 +1,6 @@
 import '../global.css';
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -27,6 +27,8 @@ function RootLayoutNav() {
   const initialize = useAuthStore((state) => state.initialize);
   const isInitialized = useAuthStore((state) => state.isInitialized);
   const session = useAuthStore((state) => state.session);
+  const router = useRouter();
+  const segments = useSegments();
 
   useEffect(() => {
     initialize();
@@ -37,6 +39,19 @@ function RootLayoutNav() {
       initPowerSync();
     }
   }, [session]);
+
+  // Auth guard: redirect based on auth state
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!session && !inAuthGroup) {
+      router.replace('/(auth)/login');
+    } else if (session && inAuthGroup) {
+      router.replace('/(tabs)');
+    }
+  }, [session, isInitialized, segments]);
 
   if (!isInitialized) {
     return null;

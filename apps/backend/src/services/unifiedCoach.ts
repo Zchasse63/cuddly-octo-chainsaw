@@ -16,6 +16,7 @@
  */
 
 import { generateCompletion, streamCompletion, TEMPERATURES, xai, AI_CONFIG } from '../lib/ai';
+import { calculate1RM } from '../lib/formulas';
 import { search, cache } from '../lib/upstash';
 import { SEARCH_INDEXES, UPSTASH_INDEXES, getIndexesForContext } from './searchIndexer';
 import {
@@ -474,8 +475,8 @@ export class UnifiedCoachService {
     // Calculate set number
     const setCount = (context.setCount || 0) + 1;
 
-    // Calculate estimated 1RM and check for PR
-    const estimated1rm = weight ? weight * (1 + reps / 30) : null;
+    // Calculate estimated 1RM (Epley formula) and check for PR
+    const estimated1rm = weight ? calculate1RM(weight, reps) : null;
 
     const existingPr = await this.db.execute(sql`
       SELECT MAX(estimated_1rm) as max_1rm

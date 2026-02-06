@@ -333,7 +333,7 @@ export async function initPowerSync(): Promise<void> {
 
     const connector = new SupabasePowerSyncConnector();
     await powerSync.connect(connector);
-    console.log('[PowerSync] Connected successfully');
+    // PowerSync connected
   } catch (error) {
     console.error('[PowerSync] Initialization failed:', error);
     // PowerSync is optional - don't throw
@@ -344,7 +344,7 @@ export async function initPowerSync(): Promise<void> {
 export async function disconnectPowerSync(): Promise<void> {
   try {
     await powerSync.disconnect();
-    console.log('[PowerSync] Disconnected successfully');
+    // PowerSync disconnected
   } catch (error) {
     console.error('[PowerSync] Disconnect failed:', error);
   }

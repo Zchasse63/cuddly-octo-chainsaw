@@ -21,14 +21,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         try {
           await SecureStore.setItemAsync(key, value);
         } catch {
-          console.log('Failed to save to SecureStore');
+          // SecureStore save failed silently
         }
       },
       removeItem: async (key) => {
         try {
           await SecureStore.deleteItemAsync(key);
         } catch {
-          console.log('Failed to remove from SecureStore');
+          // SecureStore remove failed silently
         }
       },
     },
@@ -51,14 +51,14 @@ const secureStorage = {
     try {
       await SecureStore.setItemAsync(name, value);
     } catch {
-      console.log('Failed to save to SecureStore');
+      // SecureStore save failed silently
     }
   },
   removeItem: async (name: string): Promise<void> => {
     try {
       await SecureStore.deleteItemAsync(name);
     } catch {
-      console.log('Failed to remove from SecureStore');
+      // SecureStore remove failed silently
     }
   },
 };

@@ -383,6 +383,7 @@ export async function generateCompletion(params: {
   maxTokens?: number;
   model?: ModelType;
   complexity?: TaskComplexity;
+  timeout?: number;
 }): Promise<string> {
   const {
     systemPrompt,
@@ -391,6 +392,7 @@ export async function generateCompletion(params: {
     maxTokens = 500,
     model,
     complexity = 'moderate',
+    timeout,
   } = params;
 
   // Model selection: explicit model takes priority over complexity
@@ -411,6 +413,7 @@ export async function generateCompletion(params: {
       prompt: userPrompt,
       temperature,
       maxOutputTokens: maxTokens,
+      abortSignal: timeout ? AbortSignal.timeout(timeout) : undefined,
     });
 
     return text;

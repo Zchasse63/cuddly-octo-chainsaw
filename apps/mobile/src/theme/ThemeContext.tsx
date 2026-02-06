@@ -32,7 +32,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setThemeState(saved as ThemeMode);
         }
       } catch (error) {
-        console.log('Failed to load theme preference');
+        // Theme preference load failed silently
       }
       setIsLoaded(true);
     }
@@ -53,7 +53,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     try {
       await SecureStore.setItemAsync(THEME_STORAGE_KEY, newTheme);
     } catch (error) {
-      console.log('Failed to save theme preference');
+      // Theme preference save failed silently
     }
   };
 

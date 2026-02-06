@@ -6,7 +6,7 @@
  * Saves programs to database and creates calendar entries.
  */
 
-import { generateCompletion, TEMPERATURES } from '../lib/ai';
+import { generateCompletion, TEMPERATURES, AI_CONFIG } from '../lib/ai';
 import { search, cache } from '../lib/upstash';
 import { SEARCH_INDEXES } from './searchIndexer';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -349,6 +349,7 @@ export async function generateFullProgram(
     temperature: TEMPERATURES.coaching,
     maxTokens,
     complexity: 'longform',
+    timeout: AI_CONFIG.programGenerationTimeout,
   });
 
   try {

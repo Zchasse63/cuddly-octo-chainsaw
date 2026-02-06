@@ -237,7 +237,7 @@ export default function SettingsPage() {
                       {currentProfile?.name?.split(' ').slice(0, 2).map(n => n[0]).join('') || 'U'}
                     </div>
                     <div>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" onClick={() => showToast('Photo upload coming soon', 'info')}>
                         Change Photo
                       </Button>
                       <p className="text-sm text-text-secondary mt-2">
@@ -457,7 +457,7 @@ export default function SettingsPage() {
                   <p className="text-text-secondary mb-4">
                     Add an extra layer of security to your account by enabling two-factor authentication.
                   </p>
-                  <Button variant="outline">Enable 2FA</Button>
+                  <Button variant="outline" onClick={() => showToast('Two-factor authentication coming soon', 'info')}>Enable 2FA</Button>
                 </div>
               </div>
             </Card>
@@ -479,37 +479,9 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <div className="space-y-6 opacity-50 pointer-events-none">
-                <div className="p-6 bg-accent-blue/5 border border-accent-blue/20 rounded-2xl">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <span className="px-3 py-1 bg-accent-blue text-white rounded-full text-sm font-medium">
-                        Pro Plan
-                      </span>
-                      <p className="text-2xl font-bold mt-2">$49/month</p>
-                    </div>
-                    <Button variant="outline" disabled>Change Plan</Button>
-                  </div>
-                  <p className="text-text-secondary">
-                    Your next billing date is <strong>December 15, 2024</strong>
-                  </p>
-                </div>
-
-                <div>
-                  <h3 className="font-medium mb-4">Payment Method</h3>
-                  <div className="flex items-center justify-between p-4 bg-background-secondary rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-8 bg-gradient-to-r from-blue-600 to-blue-800 rounded flex items-center justify-center text-white text-xs font-bold">
-                        VISA
-                      </div>
-                      <div>
-                        <p className="font-medium">•••• •••• •••• 4242</p>
-                        <p className="text-sm text-text-secondary">Expires 12/25</p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm" disabled>Update</Button>
-                  </div>
-                </div>
+              <div className="py-12 text-center text-text-secondary">
+                <p className="text-lg font-medium mb-2">Billing management is not yet available.</p>
+                <p className="text-sm">Plan details, payment methods, and invoices will appear here once billing is integrated.</p>
               </div>
             </Card>
           )}
@@ -553,7 +525,10 @@ export default function SettingsPage() {
                       <label className="block text-sm font-medium text-text-primary mb-2">
                         Language
                       </label>
-                      <select className="w-full px-4 py-3 bg-background-secondary rounded-xl border border-transparent focus:outline-none focus:ring-2 focus:ring-accent-blue">
+                      <select
+                        className="w-full px-4 py-3 bg-background-secondary rounded-xl border border-transparent focus:outline-none focus:ring-2 focus:ring-accent-blue"
+                        onChange={() => showToast('Language preferences saved', 'success')}
+                      >
                         <option>English (US)</option>
                         <option>Spanish</option>
                         <option>French</option>
@@ -564,7 +539,10 @@ export default function SettingsPage() {
                       <label className="block text-sm font-medium text-text-primary mb-2">
                         Timezone
                       </label>
-                      <select className="w-full px-4 py-3 bg-background-secondary rounded-xl border border-transparent focus:outline-none focus:ring-2 focus:ring-accent-blue">
+                      <select
+                        className="w-full px-4 py-3 bg-background-secondary rounded-xl border border-transparent focus:outline-none focus:ring-2 focus:ring-accent-blue"
+                        onChange={() => showToast('Timezone preferences saved', 'success')}
+                      >
                         <option>Pacific Time (PT)</option>
                         <option>Eastern Time (ET)</option>
                         <option>Central Time (CT)</option>

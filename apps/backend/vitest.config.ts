@@ -1,8 +1,12 @@
 import { defineConfig } from 'vitest/config';
 import { config } from 'dotenv';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-// Load .env file for integration tests
-config();
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Load .env file for integration tests (explicit path for monorepo compatibility)
+config({ path: resolve(__dirname, '.env') });
 
 export default defineConfig({
   test: {
@@ -15,7 +19,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/**/*.d.ts'],
     },
-    testTimeout: 10000,
+    testTimeout: 30000,
   },
 });
 

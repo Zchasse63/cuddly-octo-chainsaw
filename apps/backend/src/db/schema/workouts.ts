@@ -2,9 +2,11 @@ import { pgTable, uuid, text, timestamp, integer, real, boolean, pgEnum } from '
 import { relations } from 'drizzle-orm';
 import { users } from './users';
 import { exercises } from './exercises';
+import { trainingPrograms } from './programs';
 
 export const workoutStatusEnum = pgEnum('workout_status', ['active', 'completed', 'cancelled']);
 export const loggingMethodEnum = pgEnum('logging_method', ['voice', 'manual', 'quick_log']);
+export const weightUnitEnum = pgEnum('weight_unit', ['lbs', 'kg']);
 
 export const workouts = pgTable('workouts', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -21,7 +23,7 @@ export const workouts = pgTable('workouts', {
   duration: integer('duration'), // in seconds
 
   // Program reference (if from a program)
-  programId: uuid('program_id'),
+  programId: uuid('program_id').references(() => trainingPrograms.id, { onDelete: 'set null' }),
   programWeek: integer('program_week'),
   programDay: integer('program_day'),
 
@@ -39,7 +41,7 @@ export const workoutSets = pgTable('workout_sets', {
   setNumber: integer('set_number').notNull(),
   reps: integer('reps'),
   weight: real('weight'),
-  weightUnit: text('weight_unit').default('lbs'),
+  weightUnit: weightUnitEnum('weight_unit').default('lbs'),
   rpe: real('rpe'), // Rate of Perceived Exertion (1-10)
 
   // Voice parsing metadata
@@ -69,7 +71,7 @@ export const personalRecords = pgTable('personal_records', {
 
   // PR data
   weight: real('weight').notNull(),
-  weightUnit: text('weight_unit').default('lbs'),
+  weightUnit: weightUnitEnum('weight_unit').default('lbs'),
   reps: integer('reps').notNull(),
   estimated1rm: real('estimated_1rm'),
 

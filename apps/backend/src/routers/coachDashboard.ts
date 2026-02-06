@@ -21,9 +21,10 @@ import {
   isCoachOfClient,
   assignClientToCoach,
 } from '../tools/coach/helpers';
+import { cache } from '../lib/upstash';
 
-// In-memory cache for AI analytics insights (1 hour TTL)
-const insightsCache = new Map<string, { insights: any[]; cachedAt: Date }>();
+// Cache TTL for AI analytics insights (1 hour)
+const INSIGHTS_CACHE_TTL = 3600;
 
 // Verify user is a coach
 async function verifyCoachTier(ctx: any) {
@@ -1012,12 +1013,12 @@ export const coachDashboardRouter = router({
     .query(async ({ ctx, input }) => {
       await verifyCoachTier(ctx);
 
-      // Simple in-memory cache (in production, use Redis)
-      const cacheKey = `ai_insights_${ctx.user.id}`;
-      const cached = insightsCache.get(cacheKey);
-
-      if (!input.forceRefresh && cached && cached.cachedAt.getTime() > Date.now() - 60 * 60 * 1000) {
-        return cached;
+      const cacheKey = `coach:insights:${ctx.user.id}`;
+      if (!input.forceRefresh) {
+        const cached = await cache.get<{ insights: unknown[]; cachedAt: string }>(cacheKey);
+        if (cached) {
+          return { ...cached, cachedAt: new Date(cached.cachedAt) };
+        }
       }
 
       // Get client stats for analysis
@@ -1073,8 +1074,8 @@ export const coachDashboardRouter = router({
 
       const result = await analyzeCoachAnalytics(ctx.db, ctx.user.id, clientStats);
 
-      // Cache the result
-      insightsCache.set(cacheKey, result);
+      // Cache the result in Redis with 1-hour TTL
+      await cache.set(cacheKey, result, INSIGHTS_CACHE_TTL);
 
       return result;
     }),
