@@ -1,8 +1,10 @@
 # VoiceFit Supabase Database Schema Report
 
-**Generated**: November 25, 2025  
-**Project**: Voice Fit (ID: szragdskusayriycfhrs)  
-**Region**: us-east-1  
+> **OUTDATED**: This report documents 41 tables from November 2025. The Drizzle schema now defines **69 tables** across 24 files. For the current schema, see `apps/backend/src/db/schema/`. For the full database audit, see [PROJECT_COMPLETION_ROADMAP.md](audits/PROJECT_COMPLETION_ROADMAP.md).
+
+**Generated**: November 25, 2025
+**Project**: Voice Fit (ID: szragdskusayriycfhrs)
+**Region**: us-east-1
 **Purpose**: External development team review
 
 ---
