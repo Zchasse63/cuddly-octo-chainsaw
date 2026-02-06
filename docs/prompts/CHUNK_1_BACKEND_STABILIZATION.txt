@@ -1,0 +1,178 @@
+Complete CHUNK 1: Backend Stabilization for VoiceFit 2.0.
+
+Reference the full audit at docs/audits/FULL_PROJECT_AUDIT.md for context.
+
+This chunk focuses on stabilizing the backend before any other work can proceed. Complete ALL tasks below.
+
+## TASK 1.1: Database Migration - Injuries Table
+
+Create supabase/migrations/20260114_injuries_table.sql with:
+
+```sql
+-- Create injuries table
+CREATE TABLE IF NOT EXISTS injuries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  body_part TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('minor', 'moderate', 'severe')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'recovering', 'resolved')),
+  notes TEXT,
+  started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  resolved_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX idx_injuries_user_id ON injuries(user_id);
+CREATE INDEX idx_injuries_body_part ON injuries(body_part);
+CREATE INDEX idx_injuries_status ON injuries(status);
+
+-- Enable RLS
+ALTER TABLE injuries ENABLE ROW LEVEL SECURITY;
+
+-- RLS policies
+CREATE POLICY "Users can view their own injuries"
+  ON injuries FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own injuries"
+  ON injuries FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own injuries"
+  ON injuries FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own injuries"
+  ON injuries FOR DELETE
+  USING (auth.uid() = user_id);
+```
+
+Then verify the Drizzle schema at apps/backend/src/db/schema/injuries.ts matches this structure.
+
+## TASK 1.2: Fix 11 Failing AI Tests
+
+The following tests are failing due to Grok AI model inconsistency. Fix them:
+
+1. tools-e2e.integration.test.ts:502 - getUserProfile: Grok returning 0 tool calls
+2. tools-e2e.integration.test.ts:516 - getTodaysWorkout: Grok calling wrong tool (getActiveProgram instead)
+3. tools-e2e.integration.test.ts:530 - getRecentWorkouts: Grok returning 0 tool calls
+4. tools-e2e.integration.test.ts:533 - searchExercises: Test timeout (60s)
+5. tools-e2e.integration.test.ts:558 - getActiveInjuries: Grok returning 0 tool calls
+6. tools-e2e.integration.test.ts:561 - getExerciseFormTips: Test timeout (60s)
+7. tools-e2e.integration.test.ts:585 - multiple tools: Grok returning 0 tool calls
+8. tools-real-workflows.integration.test.ts:468 - hasRelevantTool = false
+9. tools-real-workflows.integration.test.ts:497 - AI retrieves workout history: 0 tool calls
+10. ai.test.ts:91 - streamText returning 0 chunks
+11. voiceParser.test.ts:79 - parseVoiceCommand timeout (30s)
+
+Solutions to implement:
+- Improve tool descriptions in apps/backend/src/tools/athlete/*.ts and apps/backend/src/tools/coach/*.ts with explicit use-case examples in the description field
+- Add retry logic with exponential backoff for Grok API timeouts in the AI service layer
+- Add fallback handling when AI returns 0 tool calls - return a helpful error message rather than failing silently
+- Increase test timeouts where appropriate for integration tests that call external APIs
+
+Run tests with: npm test --workspace=backend
+Focus on the failing test files first, then run the full suite to ensure no regressions.
+
+## TASK 1.3: Create CI/CD Pipeline
+
+Create .github/workflows/test.yml:
+```yaml
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend tests
+        run: npm test --workspace=backend
+        env:
+          NODE_ENV: test
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./apps/backend/coverage/lcov.info
+          fail_ci_if_error: false
+```
+
+Create .github/workflows/lint.yml:
+```yaml
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint --workspaces --if-present
+
+      - name: Type check
+        run: npm run build --workspaces --if-present
+```
+
+Create the .github/workflows directory if it doesn't exist.
+
+## TASK 1.4: Add Missing Service Tests
+
+Create apps/backend/src/services/__tests__/fastClassifier.test.ts with 10 tests covering:
+- Intent classification for different input types
+- Edge cases (empty input, very long input)
+- Classification accuracy for workout, question, command intents
+
+Create apps/backend/src/services/__tests__/unifiedCoachV2.test.ts with 10 tests covering:
+- Basic coach response generation
+- Tool selection logic
+- Context handling
+- Error scenarios
+
+Check if apps/backend/src/services/injuryDetection.ts is deprecated. If it's still in use, add tests. If deprecated, document it.
+
+## VALIDATION CRITERIA
+
+This chunk is complete when:
+1. All 11 previously failing backend tests pass
+2. The injuries migration file exists and is valid SQL
+3. CI/CD workflow files exist in .github/workflows/
+4. At least 20 new service tests are added
+5. Running `npm test --workspace=backend` shows all tests passing
+
+Run the full test suite at the end to verify: npm test --workspace=backend

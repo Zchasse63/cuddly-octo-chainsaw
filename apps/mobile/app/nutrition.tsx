@@ -23,16 +23,11 @@ export default function NutritionScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [waterGlasses, setWaterGlasses] = useState(0);
+  const [localWaterGlasses, setLocalWaterGlasses] = useState(0);
 
   // Fetch today's nutrition data
   const { data: todayNutrition, refetch } = api.nutrition.getToday.useQuery();
   const { data: goals } = api.nutrition.getGoals.useQuery();
-
-  // Log water mutation
-  const logWaterMutation = api.nutrition.logWater.useMutation({
-    onSuccess: () => refetch(),
-  });
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -41,20 +36,21 @@ export default function NutritionScreen() {
   };
 
   const handleLogWater = () => {
-    logWaterMutation.mutate({ glasses: 1 });
+    // Water tracking is local for now - backend doesn't have logWater endpoint
+    setLocalWaterGlasses((prev) => prev + 1);
   };
 
-  const caloriesGoal = goals?.caloriesGoal || 2000;
-  const proteinGoal = goals?.proteinGoal || 150;
-  const carbsGoal = goals?.carbsGoal || 250;
-  const fatGoal = goals?.fatGoal || 65;
-  const waterGoal = goals?.waterGoal || 8;
+  const caloriesGoal = goals?.targetCalories || 2000;
+  const proteinGoal = goals?.targetProtein || 150;
+  const carbsGoal = goals?.targetCarbohydrates || 250;
+  const fatGoal = goals?.targetFat || 65;
+  const waterGoal = goals?.targetWaterMl ? Math.round(goals.targetWaterMl / 250) : 8;
 
   const calories = todayNutrition?.calories || 0;
   const protein = todayNutrition?.protein || 0;
-  const carbs = todayNutrition?.carbs || 0;
+  const carbs = todayNutrition?.carbohydrates || 0;
   const fat = todayNutrition?.fat || 0;
-  const water = todayNutrition?.waterGlasses || 0;
+  const water = localWaterGlasses;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
@@ -83,7 +79,7 @@ export default function NutritionScreen() {
           Nutrition
         </Text>
         <TouchableOpacity
-          onPress={() => router.push('/log-meal')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             width: 36,
             height: 36,
@@ -157,30 +153,30 @@ export default function NutritionScreen() {
         {/* Macros Row */}
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg }}>
           <MacroCard
-            icon={<Beef size={20} color="#FF6B6B" />}
+            icon={<Beef size={20} color={colors.activity.strength} />}
             label="Protein"
             value={protein}
             goal={proteinGoal}
             unit="g"
-            color="#FF6B6B"
+            color={colors.activity.strength}
             colors={colors}
           />
           <MacroCard
-            icon={<Cookie size={20} color="#FFE66D" />}
+            icon={<Cookie size={20} color={colors.activity.tempo} />}
             label="Carbs"
             value={carbs}
             goal={carbsGoal}
             unit="g"
-            color="#FFE66D"
+            color={colors.activity.tempo}
             colors={colors}
           />
           <MacroCard
-            icon={<Apple size={20} color="#4ECDC4" />}
+            icon={<Apple size={20} color={colors.activity.running} />}
             label="Fat"
             value={fat}
             goal={fatGoal}
             unit="g"
-            color="#4ECDC4"
+            color={colors.activity.running}
             colors={colors}
           />
         </View>
@@ -188,7 +184,7 @@ export default function NutritionScreen() {
         {/* Water Tracking */}
         <Card style={{ marginBottom: spacing.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md }}>
-            <Droplets size={20} color="#4ECDC4" />
+            <Droplets size={20} color={colors.activity.running} />
             <Text
               style={{
                 fontSize: fontSize.base,
@@ -218,7 +214,6 @@ export default function NutritionScreen() {
             <Button
               size="sm"
               onPress={handleLogWater}
-              disabled={logWaterMutation.isPending}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Plus size={16} color={colors.text.onAccent} />
@@ -242,7 +237,7 @@ export default function NutritionScreen() {
                   flex: 1,
                   height: 8,
                   borderRadius: 4,
-                  backgroundColor: i < water ? '#4ECDC4' : colors.background.tertiary,
+                  backgroundColor: i < water ? colors.activity.running : colors.background.tertiary,
                 }}
               />
             ))}
@@ -251,7 +246,7 @@ export default function NutritionScreen() {
 
         {/* Quick Actions */}
         <TouchableOpacity
-          onPress={() => router.push('/log-meal')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -276,7 +271,7 @@ export default function NutritionScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push('/nutrition-history')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -301,7 +296,7 @@ export default function NutritionScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push('/nutrition-goals')}
+          onPress={() => router.push('/(tabs)/home' as any)}
           style={{
             flexDirection: 'row',
             alignItems: 'center',

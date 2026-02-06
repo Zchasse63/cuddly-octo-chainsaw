@@ -1,8 +1,10 @@
 # VoiceFit Supabase Database Schema Report
 
-**Generated**: November 25, 2025  
-**Project**: Voice Fit (ID: szragdskusayriycfhrs)  
-**Region**: us-east-1  
+> **OUTDATED**: This report documents 41 tables from November 2025. The Drizzle schema now defines **69 tables** across 24 files. For the current schema, see `apps/backend/src/db/schema/`. For the full database audit, see [PROJECT_COMPLETION_ROADMAP.md](audits/PROJECT_COMPLETION_ROADMAP.md).
+
+**Generated**: November 25, 2025
+**Project**: Voice Fit (ID: szragdskusayriycfhrs)
+**Region**: us-east-1
 **Purpose**: External development team review
 
 ---
@@ -116,7 +118,7 @@
 | movement_pattern | text | YES | Push/pull/squat/hinge |
 | equipment_required | text[] | YES | Equipment needed |
 | difficulty_level | text | YES | Beginner/intermediate/advanced |
-| embedding | vector(1536) | YES | OpenAI text-embedding-3-small |
+| embedding | vector(1536) | YES | Upstash Vector embedding |
 | search_vector | tsvector | YES | Full-text search |
 | parent_exercise_id | uuid | YES | Progression parent |
 | progression_parent | text | YES | Progression chain |
@@ -348,7 +350,7 @@
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | id | uuid | NO | Primary key |
-| model_id | text | NO | OpenAI model ID |
+| model_id | text | NO | AI model ID |
 | user_id | uuid | YES | User-specific model |
 | base_model | text | YES | Base model name |
 | training_data_count | integer | YES | Training examples |
@@ -995,17 +997,17 @@
 **3 tables use pgvector for AI/ML**:
 
 1. **`exercises.embedding`** (vector(1536))
-   - OpenAI text-embedding-3-small
+   - Upstash Vector embeddings
    - Used for exercise name matching from voice input
    - IVFFlat index with 100 lists
 
 2. **`exercise_cues.embedding`** (vector(1536))
-   - OpenAI text-embedding-3-small
+   - Upstash Vector embeddings
    - Used for RAG retrieval of coaching cues
    - IVFFlat index with 100 lists
 
 3. **`knowledge_base.embedding`** (vector(1536))
-   - OpenAI text-embedding-3-small
+   - Upstash Vector embeddings
    - Used for RAG retrieval of fitness knowledge
    - IVFFlat index with 100 lists
 

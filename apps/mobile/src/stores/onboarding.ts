@@ -15,7 +15,15 @@ export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 
 export type TrainingFrequency = '2-3' | '3-4' | '4-5' | '5-6' | '6+';
 
-export type ActivityType = 'strength' | 'running' | 'hybrid';
+export type ActivityType =
+  | 'weight_training'
+  | 'running'
+  | 'crossfit'
+  | 'bodyweight'
+  | 'cycling'
+  | 'swimming'
+  | 'yoga'
+  | 'other';
 
 export type Equipment =
   | 'full_gym'
@@ -29,7 +37,8 @@ interface OnboardingData {
   goals: FitnessGoal[];
   experienceLevel: ExperienceLevel | null;
   trainingFrequency: TrainingFrequency | null;
-  activityType: ActivityType | null;
+  activities: ActivityType[];
+  trainingDaysPerWeek: number | null;
   equipment: Equipment[];
   limitations: string;
   notificationsEnabled: boolean;
@@ -55,7 +64,8 @@ interface OnboardingState {
   setGoals: (goals: FitnessGoal[]) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
   setTrainingFrequency: (frequency: TrainingFrequency) => void;
-  setActivityType: (type: ActivityType) => void;
+  setActivities: (activities: ActivityType[]) => void;
+  setTrainingDaysPerWeek: (days: number) => void;
   setEquipment: (equipment: Equipment[]) => void;
   setLimitations: (limitations: string) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
@@ -71,7 +81,8 @@ const initialData: OnboardingData = {
   goals: [],
   experienceLevel: null,
   trainingFrequency: null,
-  activityType: null,
+  activities: [],
+  trainingDaysPerWeek: null,
   equipment: [],
   limitations: '',
   notificationsEnabled: true,
@@ -81,7 +92,7 @@ export const useOnboardingStore = create<OnboardingState>()(
   persist(
     (set, get) => ({
       currentStep: 0,
-      totalSteps: 8, // 0: welcome, 1: goals, 2: experience, 3: frequency, 4: activities, 5: equipment, 6: limitations, 7: notifications
+      totalSteps: 10, // 0: welcome, 1: goals, 2: activities, 3: equipment, 4: experience, 5: frequency, 6: limitations, 7: notifications, 8: voice-tutorial, 9: complete
       data: initialData,
       isCompleted: false,
 
@@ -110,8 +121,11 @@ export const useOnboardingStore = create<OnboardingState>()(
       setTrainingFrequency: (trainingFrequency) =>
         set((state) => ({ data: { ...state.data, trainingFrequency } })),
 
-      setActivityType: (activityType) =>
-        set((state) => ({ data: { ...state.data, activityType } })),
+      setActivities: (activities) =>
+        set((state) => ({ data: { ...state.data, activities } })),
+
+      setTrainingDaysPerWeek: (trainingDaysPerWeek) =>
+        set((state) => ({ data: { ...state.data, trainingDaysPerWeek } })),
 
       setEquipment: (equipment) =>
         set((state) => ({ data: { ...state.data, equipment } })),
@@ -173,22 +187,15 @@ export const frequencyLabels: Record<TrainingFrequency, string> = {
 };
 
 // Activity type display names
-export const activityTypeLabels: Record<ActivityType, { label: string; description: string; icon: string }> = {
-  strength: {
-    label: 'Strength Training',
-    description: 'Focus on weightlifting and resistance training',
-    icon: 'dumbbell',
-  },
-  running: {
-    label: 'Running',
-    description: 'Focus on cardio and running activities',
-    icon: 'run',
-  },
-  hybrid: {
-    label: 'Hybrid Athlete',
-    description: 'Combine strength training and running',
-    icon: 'activity',
-  },
+export const activityTypeLabels: Record<ActivityType, string> = {
+  weight_training: 'Weight Training',
+  running: 'Running',
+  crossfit: 'CrossFit',
+  bodyweight: 'Bodyweight',
+  cycling: 'Cycling',
+  swimming: 'Swimming',
+  yoga: 'Yoga',
+  other: 'Other',
 };
 
 // Equipment display names

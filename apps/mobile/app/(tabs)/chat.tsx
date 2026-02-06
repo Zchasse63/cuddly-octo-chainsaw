@@ -21,6 +21,8 @@ import { useWorkoutStore, useActiveWorkout, useIsWorkoutActive } from '../../src
 import { useVoiceRecorder } from '../../src/hooks/useVoiceRecorder';
 import { api } from '../../src/lib/trpc';
 import { spacing, fontSize, fontWeight, borderRadius, springs } from '../../src/theme/tokens';
+import { WorkoutConfirmationCard } from '../../src/components/chat/WorkoutConfirmationCard';
+import { ExerciseSubstitutionCard } from '../../src/components/chat/ExerciseSubstitutionCard';
 
 interface Message {
   id: string;
@@ -257,30 +259,8 @@ export default function ChatScreen() {
       };
 
       if (needsConfirmation || parsed.confidence < 0.7) {
-        // Low confidence - show quick editor for confirmation
+        // Low confidence - show WorkoutConfirmationCard
         setPendingSet(setData);
-        setQuickEditorData({
-          exerciseName: setData.exerciseName,
-          setNumber: getCurrentSetNumber(setData.exerciseName),
-          weight: setData.weight,
-          weightUnit: setData.weightUnit,
-          reps: setData.reps,
-        });
-        setShowQuickEditor(true);
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: `I think I heard: ${setData.exerciseName} - ${setData.weight}${setData.weightUnit} × ${setData.reps}. Adjust below if needed.`,
-            timestamp: new Date(),
-            type: 'confirmation_needed',
-            metadata: {
-              confidence: parsed.confidence,
-            },
-          },
-        ]);
       } else {
         // High confidence - log immediately
         await logSet(setData);
@@ -291,10 +271,22 @@ export default function ChatScreen() {
         {
           id: Date.now().toString(),
           role: 'assistant',
-          content: "Couldn't process that. Please try again or use the quick editor.",
+          content: "Couldn't process that.",
           timestamp: new Date(),
         },
       ]);
+      // Show retry button by re-enabling voice
+      setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString() + '_retry',
+            role: 'system',
+            content: 'Tap the microphone to try again',
+            timestamp: new Date(),
+          },
+        ]);
+      }, 500);
     }
   };
 
@@ -815,6 +807,34 @@ export default function ChatScreen() {
             <Send size={20} color={inputText.trim() && !isListening ? colors.text.onAccent : colors.icon.disabled} />
           </TouchableOpacity>
         </View>
+
+        {/* Workout Confirmation Card */}
+        {pendingSet && (
+          <WorkoutConfirmationCard
+            visible={!!pendingSet}
+            exerciseName={pendingSet.exerciseName}
+            weight={pendingSet.weight}
+            weightUnit={pendingSet.weightUnit}
+            reps={pendingSet.reps}
+            transcript={pendingSet.transcript}
+            onConfirm={async () => {
+              await logSet(pendingSet);
+              setPendingSet(null);
+            }}
+            onEdit={() => {
+              setQuickEditorData({
+                exerciseName: pendingSet.exerciseName,
+                setNumber: getCurrentSetNumber(pendingSet.exerciseName),
+                weight: pendingSet.weight,
+                weightUnit: pendingSet.weightUnit,
+                reps: pendingSet.reps,
+              });
+              setShowQuickEditor(true);
+              setPendingSet(null);
+            }}
+            onCancel={() => setPendingSet(null)}
+          />
+        )}
 
         {/* Quick Set Editor - shows during active workout */}
         {isWorkoutActive && showQuickEditor && (

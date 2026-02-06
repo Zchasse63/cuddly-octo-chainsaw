@@ -112,7 +112,12 @@ export const trainingPrograms = pgTable('training_programs', {
   // Template options
   isTemplate: boolean('is_template').default(false),
   isPublic: boolean('is_public').default(false),
-  templateSource: uuid('template_source'), // If created from a template
+  templateId: uuid('template_id'), // Source template ID (if created from a template)
+
+  // Coach assignment (for coach-created programs)
+  createdByCoachId: uuid('created_by_coach_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

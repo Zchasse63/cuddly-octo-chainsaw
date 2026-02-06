@@ -21,15 +21,18 @@ import { api } from '../../src/lib/trpc';
 import { useDistanceUnit, formatDistance, formatPace, formatDuration } from '../../src/stores/profile';
 import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
 
-const runTypeColors: Record<string, string> = {
-  easy: '#4ECDC4',
-  tempo: '#FFE66D',
-  interval: '#FF6B6B',
-  long_run: '#95E1D3',
-  recovery: '#A8E6CF',
-  fartlek: '#DDA0DD',
-  hill: '#F4A460',
-  race: '#FFD700',
+const getRunTypeColor = (runType: string, colors: any): string => {
+  const map: Record<string, string> = {
+    easy: colors.activity.running,
+    tempo: colors.activity.tempo,
+    interval: colors.activity.interval,
+    long_run: colors.activity.running,
+    recovery: colors.activity.recovery,
+    fartlek: colors.accent.purple,
+    hill: colors.accent.orange,
+    race: colors.accent.yellow,
+  };
+  return map[runType] || colors.text.tertiary;
 };
 
 const runTypeLabels: Record<string, string> = {
@@ -50,29 +53,17 @@ export default function RunDetailScreen() {
   const distanceUnit = useDistanceUnit();
 
   // Fetch run details
-  const { data: run, isLoading } = api.running.getActivityById.useQuery(
+  const { data: run, isLoading } = api.running.getActivity.useQuery(
     { id: id || '' },
     { enabled: !!id }
   );
 
-  // Delete mutation
-  const deleteMutation = api.running.deleteActivity.useMutation({
-    onSuccess: () => {
-      router.back();
-    },
-  });
-
   const handleDelete = () => {
     Alert.alert(
       'Delete Run',
-      'Are you sure you want to delete this run? This action cannot be undone.',
+      'Delete functionality is not yet available.',
       [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => deleteMutation.mutate({ id: id || '' }),
-        },
+        { text: 'OK', style: 'cancel' },
       ]
     );
   };
@@ -125,7 +116,7 @@ export default function RunDetailScreen() {
     );
   }
 
-  const typeColor = runTypeColors[run.runType] || colors.accent.blue;
+  const typeColor = getRunTypeColor(run.runType ?? 'easy', colors);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
@@ -152,7 +143,7 @@ export default function RunDetailScreen() {
           }}
           numberOfLines={1}
         >
-          {run.name || runTypeLabels[run.runType] || 'Run'}
+          {run.name || runTypeLabels[run.runType ?? 'easy'] || 'Run'}
         </Text>
         <TouchableOpacity onPress={handleShare} style={{ marginRight: spacing.md }}>
           <Share2 size={20} color={colors.icon.secondary} />
@@ -194,11 +185,11 @@ export default function RunDetailScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md }}>
             <Calendar size={16} color={colors.text.tertiary} />
             <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary, marginLeft: spacing.xs }}>
-              {formatDate(run.startedAt)}
+              {formatDate(run.startedAt.toISOString())}
             </Text>
             <Clock size={16} color={colors.text.tertiary} style={{ marginLeft: spacing.md }} />
             <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary, marginLeft: spacing.xs }}>
-              {formatTime(run.startedAt)}
+              {formatTime(run.startedAt.toISOString())}
             </Text>
           </View>
 
@@ -206,19 +197,19 @@ export default function RunDetailScreen() {
           <View style={{ flexDirection: 'row', marginBottom: spacing.md }}>
             <View style={{ flex: 1, alignItems: 'center' }}>
               <Text style={{ fontSize: fontSize['3xl'], fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                {formatDistance(run.distanceMeters, distanceUnit)}
+                {formatDistance(run.distanceMeters ?? 0, distanceUnit)}
               </Text>
               <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Distance</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
               <Text style={{ fontSize: fontSize['3xl'], fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                {formatDuration(run.durationSeconds)}
+                {formatDuration(run.durationSeconds ?? 0)}
               </Text>
               <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Duration</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
               <Text style={{ fontSize: fontSize['3xl'], fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                {formatPace(run.avgPaceSecondsPerKm, distanceUnit)}
+                {formatPace(run.avgPaceSecondsPerKm ?? 0, distanceUnit)}
               </Text>
               <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Avg Pace</Text>
             </View>
@@ -231,7 +222,7 @@ export default function RunDetailScreen() {
           {run.avgHeartRate && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <Heart size={20} color="#FF6B6B" />
+                <Heart size={20} color={colors.semantic.error} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
                   {run.avgHeartRate}
                 </Text>
@@ -249,7 +240,7 @@ export default function RunDetailScreen() {
           {run.avgCadence && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <Activity size={20} color="#4ECDC4" />
+                <Activity size={20} color={colors.activity.running} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
                   {run.avgCadence}
                 </Text>
@@ -260,12 +251,12 @@ export default function RunDetailScreen() {
           )}
 
           {/* Elevation */}
-          {run.elevationGain && (
+          {run.elevationGainMeters && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <TrendingUp size={20} color="#FFE66D" />
+                <TrendingUp size={20} color={colors.accent.yellow} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
-                  {Math.round(run.elevationGain)}
+                  {Math.round(run.elevationGainMeters)}
                 </Text>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Elevation</Text>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>meters</Text>
@@ -274,12 +265,12 @@ export default function RunDetailScreen() {
           )}
 
           {/* Calories */}
-          {run.calories && (
+          {run.caloriesBurned && (
             <Card style={{ flex: 1 }}>
               <View style={{ alignItems: 'center' }}>
-                <Zap size={20} color="#FF9500" />
+                <Zap size={20} color={colors.accent.orange} />
                 <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text.primary, marginTop: spacing.xs }}>
-                  {run.calories}
+                  {run.caloriesBurned}
                 </Text>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Calories</Text>
                 <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>kcal</Text>
@@ -289,26 +280,18 @@ export default function RunDetailScreen() {
         </View>
 
         {/* Pace Stats */}
-        {(run.avgPaceSecondsPerKm || run.bestPaceSecondsPerKm) && (
+        {run.avgPaceSecondsPerKm && (
           <Card style={{ marginBottom: spacing.lg }}>
             <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.md }}>
               Pace Analysis
             </Text>
             <View style={{ flexDirection: 'row', gap: spacing.lg }}>
-              {run.avgPaceSecondsPerKm > 0 && (
+              {(run.avgPaceSecondsPerKm ?? 0) > 0 && (
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                    {formatPace(run.avgPaceSecondsPerKm, distanceUnit)}
+                    {formatPace(run.avgPaceSecondsPerKm ?? 0, distanceUnit)}
                   </Text>
                   <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Average Pace</Text>
-                </View>
-              )}
-              {run.bestPaceSecondsPerKm > 0 && (
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.accent.green }}>
-                    {formatPace(run.bestPaceSecondsPerKm, distanceUnit)}
-                  </Text>
-                  <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Best Pace</Text>
                 </View>
               )}
             </View>
@@ -316,131 +299,80 @@ export default function RunDetailScreen() {
         )}
 
         {/* Splits */}
-        {run.splits && run.splits.length > 0 && (
-          <Card style={{ marginBottom: spacing.lg }}>
-            <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.md }}>
-              Splits
-            </Text>
-            <View
-              style={{
-                flexDirection: 'row',
-                paddingBottom: spacing.xs,
-                borderBottomWidth: 1,
-                borderBottomColor: colors.border.light,
-              }}
-            >
-              <Text style={{ width: 50, fontSize: fontSize.xs, color: colors.text.tertiary, fontWeight: fontWeight.medium }}>
-                {distanceUnit === 'mi' ? 'MILE' : 'KM'}
+        {(() => {
+          const splitsData = run.splits as Array<{ paceSecondsPerKm?: number; time?: number; avgHeartRate?: number }> | null;
+          if (!splitsData || !Array.isArray(splitsData) || splitsData.length === 0) return null;
+
+          const avgPace = splitsData.reduce((sum, s) => sum + (s.paceSecondsPerKm ?? 0), 0) / splitsData.length;
+
+          return (
+            <Card style={{ marginBottom: spacing.lg }}>
+              <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.md }}>
+                Splits
               </Text>
-              <Text style={{ flex: 1, fontSize: fontSize.xs, color: colors.text.tertiary, fontWeight: fontWeight.medium }}>
-                PACE
-              </Text>
-              <Text style={{ flex: 1, fontSize: fontSize.xs, color: colors.text.tertiary, fontWeight: fontWeight.medium }}>
-                TIME
-              </Text>
-              {run.splits[0]?.avgHeartRate && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  paddingBottom: spacing.xs,
+                  borderBottomWidth: 1,
+                  borderBottomColor: colors.border.light,
+                }}
+              >
                 <Text style={{ width: 50, fontSize: fontSize.xs, color: colors.text.tertiary, fontWeight: fontWeight.medium }}>
-                  HR
+                  {distanceUnit === 'mi' ? 'MILE' : 'KM'}
                 </Text>
-              )}
-            </View>
-            {run.splits.map((split: any, index: number) => {
-              const avgPace = run.splits.reduce((sum: number, s: any) => sum + s.paceSecondsPerKm, 0) / run.splits.length;
-              const isFast = split.paceSecondsPerKm < avgPace - 10;
-              const isSlow = split.paceSecondsPerKm > avgPace + 10;
-
-              return (
-                <View
-                  key={index}
-                  style={{
-                    flexDirection: 'row',
-                    paddingVertical: spacing.xs,
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ width: 50, fontSize: fontSize.sm, color: colors.text.secondary }}>
-                    {index + 1}
+                <Text style={{ flex: 1, fontSize: fontSize.xs, color: colors.text.tertiary, fontWeight: fontWeight.medium }}>
+                  PACE
+                </Text>
+                <Text style={{ flex: 1, fontSize: fontSize.xs, color: colors.text.tertiary, fontWeight: fontWeight.medium }}>
+                  TIME
+                </Text>
+                {splitsData[0]?.avgHeartRate && (
+                  <Text style={{ width: 50, fontSize: fontSize.xs, color: colors.text.tertiary, fontWeight: fontWeight.medium }}>
+                    HR
                   </Text>
-                  <Text
-                    style={{
-                      flex: 1,
-                      fontSize: fontSize.sm,
-                      color: isFast ? colors.accent.green : isSlow ? colors.semantic.error : colors.text.primary,
-                      fontWeight: fontWeight.medium,
-                    }}
-                  >
-                    {formatPace(split.paceSecondsPerKm, distanceUnit)}
-                  </Text>
-                  <Text style={{ flex: 1, fontSize: fontSize.sm, color: colors.text.primary }}>
-                    {formatDuration(split.durationSeconds)}
-                  </Text>
-                  {split.avgHeartRate && (
-                    <Text style={{ width: 50, fontSize: fontSize.sm, color: colors.text.primary }}>
-                      {split.avgHeartRate}
-                    </Text>
-                  )}
-                </View>
-              );
-            })}
-          </Card>
-        )}
+                )}
+              </View>
+              {splitsData.map((split, index) => {
+                const isFast = (split.paceSecondsPerKm ?? 0) < avgPace - 10;
+                const isSlow = (split.paceSecondsPerKm ?? 0) > avgPace + 10;
 
-        {/* Heart Rate Zones */}
-        {run.heartRateZones && (
-          <Card style={{ marginBottom: spacing.lg }}>
-            <Text style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, marginBottom: spacing.md }}>
-              Heart Rate Zones
-            </Text>
-            {Object.entries(run.heartRateZones).map(([zone, duration]: [string, any]) => {
-              const zoneColors: Record<string, string> = {
-                zone1: '#A8E6CF',
-                zone2: '#4ECDC4',
-                zone3: '#FFE66D',
-                zone4: '#FF9500',
-                zone5: '#FF6B6B',
-              };
-              const zoneLabels: Record<string, string> = {
-                zone1: 'Recovery',
-                zone2: 'Aerobic',
-                zone3: 'Tempo',
-                zone4: 'Threshold',
-                zone5: 'Anaerobic',
-              };
-              const totalDuration = Object.values(run.heartRateZones).reduce((sum: number, d: any) => sum + d, 0);
-              const percentage = totalDuration > 0 ? (duration / totalDuration) * 100 : 0;
-
-              return (
-                <View key={zone} style={{ marginBottom: spacing.sm }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>
-                      {zoneLabels[zone] || zone}
-                    </Text>
-                    <Text style={{ fontSize: fontSize.sm, color: colors.text.tertiary }}>
-                      {formatDuration(duration)} ({Math.round(percentage)}%)
-                    </Text>
-                  </View>
+                return (
                   <View
+                    key={index}
                     style={{
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: colors.background.tertiary,
-                      overflow: 'hidden',
+                      flexDirection: 'row',
+                      paddingVertical: spacing.xs,
+                      alignItems: 'center',
                     }}
                   >
-                    <View
+                    <Text style={{ width: 50, fontSize: fontSize.sm, color: colors.text.secondary }}>
+                      {index + 1}
+                    </Text>
+                    <Text
                       style={{
-                        width: `${percentage}%`,
-                        height: '100%',
-                        backgroundColor: zoneColors[zone] || colors.accent.blue,
-                        borderRadius: 4,
+                        flex: 1,
+                        fontSize: fontSize.sm,
+                        color: isFast ? colors.accent.green : isSlow ? colors.semantic.error : colors.text.primary,
+                        fontWeight: fontWeight.medium,
                       }}
-                    />
+                    >
+                      {formatPace(split.paceSecondsPerKm ?? 0, distanceUnit)}
+                    </Text>
+                    <Text style={{ flex: 1, fontSize: fontSize.sm, color: colors.text.primary }}>
+                      {formatDuration(split.time ?? 0)}
+                    </Text>
+                    {split.avgHeartRate && (
+                      <Text style={{ width: 50, fontSize: fontSize.sm, color: colors.text.primary }}>
+                        {split.avgHeartRate}
+                      </Text>
+                    )}
                   </View>
-                </View>
-              );
-            })}
-          </Card>
-        )}
+                );
+              })}
+            </Card>
+          );
+        })()}
 
         {/* Notes */}
         {run.notes && (
@@ -452,25 +384,6 @@ export default function RunDetailScreen() {
               {run.notes}
             </Text>
           </Card>
-        )}
-
-        {/* Shoe */}
-        {run.shoeId && run.shoe && (
-          <TouchableOpacity onPress={() => router.push('/shoes')}>
-            <Card style={{ marginBottom: spacing.lg }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Footprints size={20} color="#4ECDC4" />
-                <View style={{ flex: 1, marginLeft: spacing.md }}>
-                  <Text style={{ fontSize: fontSize.base, color: colors.text.primary }}>
-                    {run.shoe.name}
-                  </Text>
-                  <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>
-                    {formatDistance(run.shoe.totalDistance || 0, distanceUnit)} total
-                  </Text>
-                </View>
-              </View>
-            </Card>
-          </TouchableOpacity>
         )}
       </ScrollView>
     </SafeAreaView>

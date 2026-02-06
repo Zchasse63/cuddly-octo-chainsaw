@@ -55,3 +55,15 @@ export * from './programs';
 
 // Shoe tracking schemas
 export * from './shoes';
+
+// Coach-client relationship schemas
+export * from './coach';
+
+// Injury tracking schemas
+export * from './injuries';
+
+// Scheduling schemas
+export * from './scheduling';
+
+// Alias for backwards compatibility with tests
+export { trainingPrograms as generatedPrograms } from './programs';

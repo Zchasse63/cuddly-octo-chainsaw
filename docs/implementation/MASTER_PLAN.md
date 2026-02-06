@@ -1,7 +1,7 @@
 # VoiceFit 2.0 Master Implementation Plan
 
 **Created:** November 26, 2025
-**Last Updated:** November 26, 2025
+**Last Updated:** February 6, 2026
 **Status:** Active Development
 
 ---
@@ -9,6 +9,8 @@
 ## Executive Summary
 
 This document consolidates all implementation decisions, task lists, and progress tracking for the VoiceFit 2.0 rebuild. It serves as the single source of truth for development.
+
+> For the full issue inventory and prioritized action plan, see [PROJECT_COMPLETION_ROADMAP.md](../audits/PROJECT_COMPLETION_ROADMAP.md).
 
 ---
 
@@ -23,6 +25,7 @@ This document consolidates all implementation decisions, task lists, and progres
 | **Navigation** | Expo Router (file-based) | Modern, better DX than React Navigation |
 | **Voice AI** | Grok (xAI) | Single provider for all AI |
 | **Backend** | tRPC + Drizzle + PostgreSQL | Already implemented |
+| **Web** | Next.js 15 + Tailwind + Supabase SSR | Coach dashboard |
 | **Search/RAG** | Upstash Search | Already implemented |
 | **Database** | Supabase (PostgreSQL) | Already implemented |
 
@@ -68,12 +71,15 @@ This document consolidates all implementation decisions, task lists, and progres
 - CSV program import
 - Bulk client assignment
 - Client analytics
+- Web dashboard
 
 ---
 
 ## Current Implementation Status
 
 ### Backend (85% Complete)
+
+25 routers, 284 procedures, 14 services, 60 AI tools, 67 test files.
 
 | Router | Status | Notes |
 |--------|--------|-------|
@@ -99,57 +105,86 @@ This document consolidates all implementation decisions, task lists, and progres
 | wearables.ts | ✅ Complete | Apple Health, Terra |
 | devices.ts | ✅ Complete | Device registration |
 | wods.ts | ✅ Complete | CrossFit (backend only) |
+| shoes.ts | ✅ Complete | Running shoe tracking |
+| coachDashboard.ts | ✅ Complete | Coach web dashboard API |
 
-### Frontend (15% Complete)
+### Mobile App (60-70% Complete)
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Theme Provider | ✅ Complete | Light/dark mode |
-| UI Components | ⚠️ Basic | Button, Card, Input, Toast |
-| Screens | ❌ Not Started | 0 of 32 screens |
-| Navigation | ❌ Not Started | Need 3-tab structure |
-| tRPC Client | ❌ Not Started | Need to wire up |
+54 screens, 29 components, 5 Zustand stores, 5 custom hooks, ~58,500 LOC.
 
-### Web Dashboard (0% Complete)
+| Area | Status | Notes |
+|------|--------|-------|
+| Theme Provider | ✅ Complete | Light/dark mode, design tokens |
+| UI Components (29) | ✅ Complete | Button, Card, Input, Toast, Skeleton, Charts, etc. |
+| Navigation | ✅ Complete | 3-tab structure, auth flow, onboarding |
+| tRPC Client | ✅ Complete | Wired up with React Query |
+| Home Screen | ✅ Complete | Dashboard, readiness, weekly summary |
+| Chat / AI Coach | ✅ Complete | Voice + text, tool-based coaching |
+| GPS Running | ⚠️ Partial | Map, tracking, but incomplete cleanup |
+| Workout Logging | ✅ Complete | Voice + manual, rest timer, PR celebration |
+| Training Programs | ✅ Complete | AI generation, browsing, questionnaire |
+| Calendar | ⚠️ Partial | Week view, drag support incomplete |
+| Analytics | ⚠️ Stub | Screen exists, no content |
+| Badges | ✅ Complete | Grid, celebration animation, detail modal |
+| PowerSync Offline | ✅ Complete | 11 tables, conflict resolution |
+| Auth Guards | ❌ Missing | No redirect based on auth state |
+| Push Notifications | ❌ Missing | Configured but not implemented |
+| Deep Linking | ❌ Missing | Scheme defined, handlers missing |
 
-| Page | Status |
-|------|--------|
-| Landing Page | ❌ Not Started |
-| Coach Dashboard | ❌ Not Started |
-| Client Management | ❌ Not Started |
-| Program Builder | ❌ Not Started |
+### Web Dashboard (85-90% Complete)
+
+14 pages, 10 components, 22 test files, all using live tRPC.
+
+| Page | Status | Notes |
+|------|--------|-------|
+| Landing Page | ✅ Complete | Marketing, CTAs |
+| Login / Signup | ✅ Complete | Supabase auth |
+| Onboarding | ✅ Complete | 6-step coach onboarding |
+| Dashboard Home | ✅ Complete | Stats, activity, quick actions |
+| Clients List | ✅ Complete | Search, filter, status badges |
+| Client Detail | ✅ Complete | Workouts, programs, AI health insights |
+| New Client | ✅ Complete | Multi-step onboarding wizard |
+| Programs List | ✅ Complete | Templates, filtering |
+| New Program | ✅ Complete | Manual + AI generation modal |
+| Analytics | ✅ Complete | Metrics, charts, AI insights |
+| Messages | ✅ Complete | Chat, AI-assisted replies |
+| Settings | ⚠️ Partial | Profile/notifications/security done, billing stubbed |
+| CSV Import | ✅ Complete | Drag-drop, validation, mapping |
 
 ---
 
-## Missing Features
+## Remaining Work
 
-### High Priority (MVP Blockers)
-1. Mobile screens (32 screens)
-2. Navigation structure (3 tabs)
-3. tRPC client setup
-4. PowerSync integration
-5. Shoe tracking (backend + frontend)
+> See [PROJECT_COMPLETION_ROADMAP.md](../audits/PROJECT_COMPLETION_ROADMAP.md) for the full prioritized action plan.
+
+### High Priority (Pre-Launch)
+1. Fix backend build error (trpc/index.ts Headers type cast)
+2. Mobile auth guards and deep linking
+3. CORS configuration for production
+4. Migrate in-memory state to Redis
+5. Push notification integration
 
 ### Medium Priority
-1. Full badge system (90 badges)
-2. Health Intelligence AI correlations
-3. Drag-and-drop calendar UI
-4. Coach web dashboard
+1. Complete mobile analytics screen
+2. Complete calendar drag-and-drop
+3. Align dependency versions across workspaces
+4. Generate missing Supabase migrations (69 tables, only 6 migrations)
+5. Web billing tab
 
 ### Low Priority (Post-MVP)
 1. Multi-sport support
-2. Social features UI
+2. Social features UI polish
 3. Calendar sync (Apple/Google)
 4. Export functionality
 
 ---
 
-## File Structure (Target)
+## File Structure
 
 ```
 apps/
 ├── mobile/
-│   ├── app/                    # Expo Router screens
+│   ├── app/                    # Expo Router screens (54)
 │   │   ├── (tabs)/             # Tab navigation
 │   │   │   ├── index.tsx       # Home tab
 │   │   │   ├── chat.tsx        # Chat tab
@@ -162,15 +197,26 @@ apps/
 │   │   ├── calendar/           # Calendar screens
 │   │   └── _layout.tsx         # Root layout
 │   ├── src/
-│   │   ├── components/         # UI components
-│   │   ├── hooks/              # Custom hooks
-│   │   ├── lib/                # Utilities
-│   │   ├── stores/             # Zustand stores
-│   │   ├── theme/              # Theme system
-│   │   └── types/              # TypeScript types
+│   │   ├── components/         # 29 UI components
+│   │   ├── hooks/              # 5 custom hooks
+│   │   ├── lib/                # tRPC, PowerSync
+│   │   ├── stores/             # 5 Zustand stores
+│   │   └── theme/              # Theme system
 │   └── package.json
-├── backend/                    # ✅ Complete
-└── web/                        # Coach dashboard (future)
+├── backend/
+│   ├── src/
+│   │   ├── routers/            # 25 tRPC routers
+│   │   ├── services/           # 14 AI/business services
+│   │   ├── tools/              # 60 AI tools
+│   │   ├── db/schema/          # 24 Drizzle schema files
+│   │   └── trpc/               # tRPC setup + middleware
+│   └── package.json
+└── web/
+    ├── src/
+    │   ├── app/                # 14 Next.js pages
+    │   ├── components/         # 10 UI + feature components
+    │   └── lib/                # tRPC, Supabase
+    └── package.json
 ```
 
 ---
@@ -183,9 +229,10 @@ See `TASK_LIST.md` for detailed task breakdown with parent/child tasks.
 
 ## Related Documents
 
+- [PROJECT_COMPLETION_ROADMAP.md](../audits/PROJECT_COMPLETION_ROADMAP.md) - Full audit + action plan (Feb 2026)
 - [TASK_LIST.md](./TASK_LIST.md) - Full task breakdown
 - [BADGE_DEFINITIONS.md](./BADGE_DEFINITIONS.md) - All 90 badges
-- [SCREEN_INVENTORY.md](./SCREEN_INVENTORY.md) - All 32 mobile screens
+- [SCREEN_INVENTORY.md](./SCREEN_INVENTORY.md) - Mobile screens
 - [API_REFERENCE.md](./API_REFERENCE.md) - tRPC router reference
+- [../TOOL_CATALOG.md](../TOOL_CATALOG.md) - 60 AI tools with full specs
 - [../UI_SPECIFICATION.md](../UI_SPECIFICATION.md) - Design system
-- [../FEATURE_EXTRACTION_SPECIFICATION.md](../FEATURE_EXTRACTION_SPECIFICATION.md) - Original features

@@ -45,7 +45,7 @@ export function useLiveActivity(): UseLiveActivityReturn {
   const [isActive, setIsActive] = useState(false);
   const activeWorkout = useActiveWorkout();
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<Date | null>(null);
 
   // Check availability on mount

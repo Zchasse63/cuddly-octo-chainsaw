@@ -21,13 +21,13 @@ export default function NotificationsScreen() {
       console.error('Error requesting notifications:', error);
     }
     nextStep();
-    router.push('/(onboarding)/complete');
+    router.push('/(onboarding)/voice-tutorial');
   };
 
   const handleSkip = () => {
     setNotificationsEnabled(false);
     nextStep();
-    router.push('/(onboarding)/complete');
+    router.push('/(onboarding)/voice-tutorial');
   };
 
   const handleBack = () => {

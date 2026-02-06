@@ -7,6 +7,7 @@ import { Dumbbell, Mail, Lock, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,8 +16,14 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   const signIn = trpc.auth.signIn.useMutation({
-    onSuccess: (data) => {
-      localStorage.setItem('token', data.token);
+    onSuccess: async (data) => {
+      // Store the session in Supabase client for subsequent API calls
+      if (data.session && supabase) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+      }
       router.push('/dashboard');
     },
     onError: (err) => {
@@ -104,7 +111,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-8 text-center text-text-secondary">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/signup" className="text-accent-blue hover:underline">
               Sign up
             </Link>

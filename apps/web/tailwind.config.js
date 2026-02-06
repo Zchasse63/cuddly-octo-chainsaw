@@ -10,14 +10,15 @@ module.exports = {
     extend: {
       colors: {
         background: {
-          primary: 'var(--background-primary)',
-          secondary: 'var(--background-secondary)',
-          tertiary: 'var(--background-tertiary)',
+          primary: '#FFFFFF',
+          secondary: '#F8F9FA',
+          tertiary: '#E9ECEF',
         },
         text: {
-          primary: 'var(--text-primary)',
-          secondary: 'var(--text-secondary)',
-          tertiary: 'var(--text-tertiary)',
+          primary: '#000000',
+          secondary: '#495057',
+          tertiary: '#6C757D',
+          disabled: '#ADB5BD',
         },
         accent: {
           blue: '#007AFF',
@@ -26,6 +27,19 @@ module.exports = {
           green: '#34C759',
           purple: '#AF52DE',
           red: '#FF3B30',
+          teal: '#5AC8FA',
+          yellow: '#FFCC00',
+        },
+        border: {
+          primary: '#DEE2E6',
+          subtle: '#E9ECEF',
+          medium: '#6C757D',
+        },
+        semantic: {
+          success: '#34C759',
+          warning: '#FF9500',
+          error: '#FF3B30',
+          info: '#5AC8FA',
         },
       },
       fontFamily: {

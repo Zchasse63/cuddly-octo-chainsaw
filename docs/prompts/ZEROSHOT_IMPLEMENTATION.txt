@@ -1,0 +1,207 @@
+Implement the complete VoiceFit 2.0 application based on the comprehensive audit at docs/audits/FULL_PROJECT_AUDIT.md. Follow the UI specification at docs/UI_SPECIFICATION.md for all UI/UX work. This is a MULTI-PHASE IMPLEMENTATION task - you must complete ALL phases below.
+
+IMPORTANT EXCLUSION: Do NOT implement social features (friends list, challenges, leaderboards). These are in apps/mobile/app/friends.tsx, apps/mobile/app/challenges.tsx, apps/mobile/app/leaderboard.tsx and social router social.ts - skip these entirely.
+
+CRITICAL: Follow the UI_SPECIFICATION.md exactly for all colors, typography, spacing, animations, and component styling. Use the design tokens defined there.
+
+## PHASE 1: CRITICAL FOUNDATION (Priority: Highest)
+
+### 1.1 Database Migration - Injuries Table
+Create supabase/migrations/20260114_injuries_table.sql with:
+- injuries table (id UUID PRIMARY KEY, user_id UUID REFERENCES users, body_part TEXT NOT NULL, severity TEXT CHECK (severity IN ('minor', 'moderate', 'severe')), status TEXT CHECK (status IN ('active', 'recovering', 'resolved')), notes TEXT, started_at TIMESTAMP, resolved_at TIMESTAMP, created_at TIMESTAMP DEFAULT NOW())
+- Indexes on user_id, body_part, status
+- RLS policies: users can only access their own injuries
+- Verify Drizzle schema at apps/backend/src/db/schema/injuries.ts matches
+
+### 1.2 Fix 11 Failing AI Tests
+Fix these failing tests in apps/backend:
+1. tools-e2e.integration.test.ts:502 - getUserProfile: Grok returning 0 tool calls
+2. tools-e2e.integration.test.ts:516 - getTodaysWorkout: Grok calling wrong tool
+3. tools-e2e.integration.test.ts:530 - getRecentWorkouts: Grok returning 0 tool calls
+4. tools-e2e.integration.test.ts:533 - searchExercises: Test timeout (60s)
+5. tools-e2e.integration.test.ts:558 - getActiveInjuries: Grok returning 0 tool calls
+6. tools-e2e.integration.test.ts:561 - getExerciseFormTips: Test timeout (60s)
+7. tools-e2e.integration.test.ts:585 - multiple tools: Grok returning 0 tool calls
+8. tools-real-workflows.integration.test.ts:468 - AI gathers profile+program: hasRelevantTool = false
+9. tools-real-workflows.integration.test.ts:497 - AI retrieves workout history: 0 tool calls
+10. ai.test.ts:91 - streamText returning 0 chunks
+11. voiceParser.test.ts:79 - parseVoiceCommand timeout (30s)
+
+Solutions: Improve tool descriptions with explicit use-case examples, add retry logic with exponential backoff for Grok API timeouts, add fallback handling when AI returns 0 tool calls.
+
+### 1.3 Create CI/CD Pipeline
+Create .github/workflows/test.yml - trigger on push to main, pull_request, run backend tests, upload coverage to Codecov, block merge if tests fail.
+Create .github/workflows/lint.yml - ESLint + TypeScript check.
+
+### 1.4 Add Missing Service Tests
+Create apps/backend/src/services/__tests__/fastClassifier.test.ts (10 tests)
+Create apps/backend/src/services/__tests__/unifiedCoachV2.test.ts (10 tests)
+
+## PHASE 2: MOBILE APP FOUNDATION
+
+### 2.1 Configure PowerSync Offline Sync
+In apps/mobile/src/lib/powersync.ts - install @powersync/react-native, define sync rules for 12 tables (workouts, workout_sets, exercises, runs, run_splits, readiness_logs, injuries, nutrition_logs, shoes, programs, program_workouts, badges), implement last-write-wins conflict resolution, add connection status UI indicator.
+
+### 2.2 Fix Theme Tokens
+In apps/mobile/src/theme/tokens.ts add: colors.status.success/error/warning, colors.border.default, fontSize['4xl'] = 34, fontWeight.normal = '400'
+
+### 2.3 Fix UI Component Types
+Button.tsx: Add style?: StyleProp<ViewStyle>, change children to ReactNode
+Input.tsx: Add autoFocus?: boolean
+
+### 2.4 Install Missing Dependencies
+pnpm add expo-notifications @react-native-community/netinfo @powersync/react-native --filter mobile
+pnpm add -D @types/uuid @types/detox --filter mobile
+
+### 2.5 Complete Authentication Screens
+login.tsx - Supabase Auth integration, form validation, secure token storage
+signup.tsx - Supabase Auth with Apple/Google OAuth, terms checkbox
+forgot-password.tsx - Password reset flow
+
+### 2.6 Complete Onboarding Flow
+Implement all 10 screens: index.tsx (welcome), activities.tsx, equipment.tsx, experience.tsx, frequency.tsx, goals.tsx, limitations.tsx, notifications.tsx (expo-notifications), voice-tutorial.tsx, complete.tsx (confetti). Each must use UI_SPECIFICATION.md styling, connect to onboarding tRPC router, show progress indicator.
+
+## PHASE 3: CORE TAB IMPLEMENTATIONS
+
+### 3.1 Home Tab (60% → 100%)
+Build: TodaysWorkoutCard (workout preview, exercise list, start button), WeeklySummary (total workouts/volume/PRs), RecentActivityList (infinite scroll), ReadinessPromptModal (sliders, submit). All using UI_SPECIFICATION.md colors.
+
+### 3.2 Chat Tab (70% → 100%)
+Wire useVoiceRecorder to voice router, build WorkoutConfirmationCard (parsed workout, edit/confirm), ExerciseSubstitutionCard, add error handling with retry logic.
+
+### 3.3 Running Tab (40% → 100%)
+GPS tracking with Location.watchPositionAsync, ActiveRunMap with react-native-maps, RunStatsOverlay (pace, distance, time), pause/resume, RunSummaryScreen (route, splits, PRs, save), PreRunSetup (shoe selector, run type picker).
+
+### 3.4 Workout Tab (30% → 100%)
+ExerciseSelector (search, autocomplete), SetLoggingForm (weight, reps, RPE, notes), VoiceLoggingButton (FAB, pulsing animation), RestTimer (circular, audio cues), PRCelebration (confetti, haptic), WorkoutSummary (volume, PRs, save).
+
+## PHASE 4: WORKOUT & TRAINING FEATURES
+
+### 4.1 Training Calendar
+CalendarWeekView (7 days, workout icons, status colors), DayDetailSheet (bottom sheet, buttons), drag-and-drop rescheduling (long press, animate, api.calendar.reschedule).
+
+### 4.2 Program Management
+programs.tsx - tabs (Active, Completed, Discover), program cards
+program-detail.tsx - week breakdown, progress, adherence
+program-questionnaire.tsx - multi-step form, AI generation, preview
+
+### 4.3 Analytics & Progress
+analytics.tsx - VolumeChart, MuscleGroupBreakdown, WeeklyComparison
+personal-records.tsx - PRList by exercise, filters
+health.tsx - HealthIntelligence correlations, InjuryRiskIndicator, recommendations
+
+### 4.4 Workout History
+workout-history.tsx - infinite scroll, date filters
+workout/[id].tsx - exercise breakdown, sets, PRs
+
+### 4.5 Exercise Library
+exercises.tsx - search, filters, cards
+exercise/[id].tsx - details, form tips, history, substitutes
+
+## PHASE 5: RUNNING & WEARABLES
+
+### 5.1 Run History
+run-history.tsx - list, filters, PR badges
+run/[id].tsx - route map, splits, details
+
+### 5.2 Shoe Tracking
+shoes.tsx - cards, mileage progress, replacement warning
+add-shoe.tsx - form, api.shoes.create
+
+### 5.3 Workout Builder (Intervals)
+workout-builder.tsx - segment builder, reorder, audio cues with expo-av
+
+### 5.4 Wearables Integration
+integrations.tsx - Apple Health connection, Terra wearables OAuth, sync controls
+
+### 5.5 Nutrition Tracking
+nutrition.tsx - meal logging, macro tracking, daily summary
+
+## PHASE 6: BADGE SYSTEM
+
+### 6.1 Define 90 Badge Specifications
+Create apps/backend/src/db/seeds/badges.ts with Strength (30), Running (40), Streak (12), Hybrid (8) badges.
+Create docs/implementation/BADGE_DEFINITIONS.md
+
+### 6.2 Enhance Badge Unlock Service
+badgeUnlocker.ts - workout/run triggers, daily cron, program completion
+
+### 6.3 Mobile Badge UI
+badges.tsx - BadgeGrid (tabs, 3-column), BadgeDetailModal, BadgeCelebration (confetti, haptic)
+
+## PHASE 7: COACH WEB DASHBOARD
+
+### 7.1 Web Foundation
+apps/web/src/lib/trpc.ts - tRPC client with auth headers
+apps/web/src/app/providers.tsx - QueryClientProvider
+apps/web/src/lib/supabase.ts - auth functions
+
+### 7.2 Authentication Pages
+login/page.tsx - Supabase Auth, form, validation
+signup/page.tsx - form, terms, redirect to onboarding
+
+### 7.3 Dashboard Pages - Replace ALL Mock Data
+dashboard/page.tsx → api.coach.getDashboardSummary.useQuery()
+dashboard/clients/page.tsx → api.coach.getClientList.useQuery()
+dashboard/clients/[id]/page.tsx → api.coach.getClientDetail.useQuery()
+dashboard/clients/new/page.tsx → api.coach.inviteClient.useMutation()
+dashboard/analytics/page.tsx → api.coach.getAnalyticsSummary.useQuery()
+dashboard/import/page.tsx → CSV upload, api.coach.bulkImportClients.useMutation()
+dashboard/programs/page.tsx → api.coach.getProgramTemplates.useQuery()
+dashboard/programs/new/page.tsx → program builder, api.coach.createProgramTemplate.useMutation()
+dashboard/messages/page.tsx → api.coach.getConversations.useQuery(), sendMessage mutation
+dashboard/settings/page.tsx → api.coach.updateProfile.useMutation()
+onboarding/page.tsx → multi-step, api.coach.completeOnboarding.useMutation()
+page.tsx → marketing landing page
+
+### 7.4 Align Web Styling
+tailwind.config.js - add all colors from UI_SPECIFICATION.md
+
+## PHASE 8: TESTING INFRASTRUCTURE
+
+### 8.1 Mobile Test Setup
+vitest.config.ts, @testing-library/react-native, component tests (10+), hook tests (4), store tests (4)
+
+### 8.2 Mobile E2E Testing
+Detox setup, auth.e2e.ts, voiceLogging.e2e.ts, running.e2e.ts, readiness.e2e.ts, aiCoach.e2e.ts
+
+### 8.3 Web Test Setup
+vitest.config.ts, @testing-library/react, page integration tests (10+)
+
+## PHASE 9: PERFORMANCE & PRODUCTION
+
+### 9.1 Mobile Performance
+React.memo, FlashList, fast-image, code splitting, Sentry
+
+### 9.2 Backend Performance
+Pagination, indexes, Redis caching, rate limiting
+
+### 9.3 Security Hardening
+Authorization audit, rate limiting auth endpoints, input sanitization, RLS verification, CSRF
+
+### 9.4 Monitoring Setup
+Sentry (backend/mobile/web), Winston logging, Betterstack uptime, AI cost tracking
+
+### 9.5 Documentation
+README.md, API_REFERENCE.md, DEPLOYMENT.md, TESTING.md, MOBILE_DEV_GUIDE.md, WEB_DEV_GUIDE.md
+
+### 9.6 Deployment Setup
+Vercel (web), EAS Build (mobile), database migrations, staging environment, production checklist
+
+## VALIDATION CRITERIA
+1. All 11 failing backend tests pass
+2. CI/CD pipeline runs successfully
+3. Database injuries migration applied
+4. All 10 onboarding screens functional
+5. GPS running tracking works
+6. Voice workout logging works
+7. All 15 web pages use real tRPC data
+8. PowerSync offline sync working
+9. 90 badges defined and unlock logic working
+10. Mobile has 50+ tests
+11. E2E tests pass
+12. Web has 20+ tests
+13. Bundle sizes within targets
+14. Sentry and logging configured
+15. Staging deployment successful
+16. All documentation complete

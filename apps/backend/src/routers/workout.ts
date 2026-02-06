@@ -2,12 +2,7 @@ import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 import { workouts, workoutSets, personalRecords, exercises } from '../db/schema';
 import { eq, desc, and, sql, gte } from 'drizzle-orm';
-
-// Epley formula for estimated 1RM
-function calculate1RM(weight: number, reps: number): number {
-  if (reps === 1) return weight;
-  return weight * (1 + reps / 30);
-}
+import { calculate1RM } from '../lib/formulas';
 
 export const workoutRouter = router({
   // Start a new workout
@@ -302,7 +297,7 @@ export const workoutRouter = router({
       ORDER BY date
     `);
 
-    return result.rows;
+    return result as unknown as Array<Record<string, unknown>>;
   }),
 
   // Get exercise history (sets for a specific exercise)

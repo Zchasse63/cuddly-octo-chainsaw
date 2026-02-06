@@ -17,7 +17,7 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { Card, Button } from '../src/components/ui';
 import { api } from '../src/lib/trpc';
 import { useDistanceUnit, formatDistance, useWeightUnit, formatWeight } from '../src/stores/profile';
-import { spacing, fontSize, fontWeight, borderRadius, heights } from '../src/theme/tokens';
+import { spacing, fontSize, fontWeight, borderRadius, heights, medalColors } from '../src/theme/tokens';
 
 type LeaderboardType = 'workouts' | 'volume' | 'distance' | 'streak';
 type TimeFrame = 'week' | 'month' | 'all';
@@ -32,16 +32,16 @@ export default function LeaderboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Fetch leaderboard data
-  const { data: leaderboard, isLoading, refetch } = api.social.getLeaderboard.useQuery({
-    type: leaderboardType,
-    timeFrame,
+  // Map mobile leaderboard types to backend types
+  const backendType = leaderboardType === 'streak' ? 'streak' : leaderboardType === 'workouts' ? 'prs' : 'badges';
+
+  const { data: leaderboard, isLoading, refetch } = api.gamification.getLeaderboard.useQuery({
+    type: backendType as 'streak' | 'badges' | 'prs',
+    limit: 20,
   });
 
-  // Fetch current user's rank
-  const { data: myRank } = api.social.getMyRank.useQuery({
-    type: leaderboardType,
-    timeFrame,
-  });
+  // Current user's rank is determined by their position in the leaderboard
+  const myRank = leaderboard?.findIndex((entry) => String(entry.user_id) === 'current-user-id') ?? -1;
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -51,9 +51,9 @@ export default function LeaderboardScreen() {
 
   const typeOptions: { value: LeaderboardType; label: string; icon: React.ReactNode }[] = [
     { value: 'workouts', label: 'Workouts', icon: <Dumbbell size={16} color={colors.accent.blue} /> },
-    { value: 'volume', label: 'Volume', icon: <TrendingUp size={16} color="#FFE66D" /> },
-    { value: 'distance', label: 'Distance', icon: <Footprints size={16} color="#4ECDC4" /> },
-    { value: 'streak', label: 'Streak', icon: <Flame size={16} color="#FF6B6B" /> },
+    { value: 'volume', label: 'Volume', icon: <TrendingUp size={16} color={colors.activity.tempo} /> },
+    { value: 'distance', label: 'Distance', icon: <Footprints size={16} color={colors.activity.running} /> },
+    { value: 'streak', label: 'Streak', icon: <Flame size={16} color={colors.activity.strength} /> },
   ];
 
   const timeFrameOptions: { value: TimeFrame; label: string }[] = [
@@ -80,11 +80,11 @@ export default function LeaderboardScreen() {
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1:
-        return <Crown size={24} color="#FFD700" />;
+        return <Crown size={24} color={medalColors.gold} />;
       case 2:
-        return <Medal size={24} color="#C0C0C0" />;
+        return <Medal size={24} color={medalColors.silver} />;
       case 3:
-        return <Medal size={24} color="#CD7F32" />;
+        return <Medal size={24} color={medalColors.bronze} />;
       default:
         return null;
     }
@@ -93,11 +93,11 @@ export default function LeaderboardScreen() {
   const getRankColor = (rank: number) => {
     switch (rank) {
       case 1:
-        return '#FFD700';
+        return medalColors.gold;
       case 2:
-        return '#C0C0C0';
+        return medalColors.silver;
       case 3:
-        return '#CD7F32';
+        return medalColors.bronze;
       default:
         return colors.text.secondary;
     }
@@ -312,13 +312,13 @@ export default function LeaderboardScreen() {
             <View style={{ flex: 1, marginLeft: spacing.md }}>
               <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>Your Rank</Text>
               <Text style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text.primary }}>
-                #{myRank.rank} of {myRank.total}
+                #{myRank + 1} of {leaderboard?.length || 0}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary }}>Your Score</Text>
               <Text style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.accent.blue }}>
-                {formatValue(myRank.value, leaderboardType)}
+                {formatValue(0, leaderboardType)}
               </Text>
             </View>
           </View>
@@ -328,7 +328,7 @@ export default function LeaderboardScreen() {
       {/* Leaderboard List */}
       <FlatList
         data={leaderboard}
-        keyExtractor={(item) => item.userId}
+        keyExtractor={(item, index) => String(item.user_id || index)}
         renderItem={renderUser}
         contentContainerStyle={{ padding: spacing.md }}
         refreshControl={

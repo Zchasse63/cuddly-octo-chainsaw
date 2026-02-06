@@ -1,0 +1,167 @@
+Complete CHUNK 5: Badge System for VoiceFit 2.0.
+
+IMPORTANT: Much of the badge system already exists! Read existing code before making changes.
+
+## EXISTING IMPLEMENTATION (DO NOT RECREATE)
+
+Already implemented:
+- `apps/backend/src/db/seeds/badges.ts` - 90 badge definitions (strength, running, streak, hybrid)
+- `apps/backend/src/services/badgeUnlocker.ts` - Badge unlock logic
+- `apps/backend/src/routers/gamification.ts` - Full tRPC API with:
+  - getBadges, awardBadge, getAllBadgeDefinitions
+  - getBadgeProgress, getBadgesByCategory
+  - checkBadgesAfterWorkout, checkBadgesAfterRun
+  - getStreaks, updateStreak
+- `apps/mobile/app/badges.tsx` - Basic badge grid screen (258 lines)
+
+## TASKS TO COMPLETE
+
+### Task 1: BadgeDetailModal Component
+
+Create `apps/mobile/src/components/badges/BadgeDetailModal.tsx`:
+```typescript
+// Modal showing badge details when tapped
+// Props: visible, onClose, badge (definition + earned status)
+// Features:
+// - Large badge icon (64px) with tier color border
+// - Badge name (fontSize.2xl, fontWeight.bold)
+// - Badge description (fontSize.base, color.text.secondary)
+// - Tier indicator (Bronze/Silver/Gold/Diamond chip)
+// - If earned: "Earned on [date]" with check icon
+// - If locked: Progress indicator if available, "Keep going!" message
+// - Criteria explanation (e.g., "Complete 50 workouts")
+// - Close button (X icon)
+// Use BlurView background from expo-blur for iOS
+```
+
+### Task 2: BadgeCelebration Component
+
+Create `apps/mobile/src/components/badges/BadgeCelebration.tsx`:
+```typescript
+// Full-screen celebration when badge unlocked
+// Props: visible, onDismiss, badge (newly earned badge)
+// Features:
+// - ConfettiCannon from react-native-confetti-cannon (autoStart=true, count=150)
+// - Haptic feedback (Haptics.notificationAsync(Success)) on mount
+// - Large animated badge icon (scale up from 0 with spring animation)
+// - "New Badge Unlocked!" header text
+// - Badge name and description
+// - Tier with appropriate color
+// - "Tap to dismiss" or auto-dismiss after 4 seconds
+// - Dark overlay background (rgba(0,0,0,0.8))
+```
+
+### Task 3: Update badges.tsx
+
+Update `apps/mobile/app/badges.tsx` to:
+1. Import and use BadgeDetailModal
+2. Add state for selected badge: `const [selectedBadge, setSelectedBadge] = useState(null)`
+3. On badge tap: `setSelectedBadge(badge)`
+4. Render modal: `<BadgeDetailModal visible={!!selectedBadge} badge={selectedBadge} onClose={() => setSelectedBadge(null)} />`
+5. Fetch all definitions for each category to show locked badges:
+```typescript
+const { data: strengthBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'strength' });
+const { data: runningBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'running' });
+const { data: streakBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'streak' });
+const { data: hybridBadges } = api.gamification.getBadgesByCategory.useQuery({ category: 'hybrid' });
+```
+
+### Task 4: Integrate Badge Celebration into Workout Flow
+
+Update `apps/mobile/app/(tabs)/workout.tsx`:
+1. After saving workout (in handleCompleteWorkout or save mutation onSuccess):
+```typescript
+// Check for new badges
+const { data: newBadges } = await api.gamification.checkBadgesAfterWorkout.mutate({ workoutId });
+if (newBadges?.newBadges?.length > 0) {
+  setNewlyEarnedBadge(newBadges.newBadges[0]);
+  setShowBadgeCelebration(true);
+}
+```
+2. Add state: `const [showBadgeCelebration, setShowBadgeCelebration] = useState(false)`
+3. Add state: `const [newlyEarnedBadge, setNewlyEarnedBadge] = useState(null)`
+4. Render celebration: `<BadgeCelebration visible={showBadgeCelebration} badge={newlyEarnedBadge} onDismiss={() => setShowBadgeCelebration(false)} />`
+
+### Task 5: Integrate Badge Celebration into Run Flow
+
+Update `apps/mobile/app/(tabs)/run.tsx`:
+1. After saving run (in handleSaveRun or saveRunMutation onSuccess):
+```typescript
+// Check for new badges
+const { data: newBadges } = await api.gamification.checkBadgesAfterRun.mutate({ activityId });
+if (newBadges?.newBadges?.length > 0) {
+  setNewlyEarnedBadge(newBadges.newBadges[0]);
+  setShowBadgeCelebration(true);
+}
+```
+2. Add same state and celebration rendering as workout tab
+
+## STYLING REQUIREMENTS
+
+All components MUST use:
+- colors from useTheme() hook
+- spacing, fontSize, fontWeight, borderRadius from tokens.ts
+- medalColors from tokens.ts for tier colors (bronze, silver, gold, diamond)
+
+## DEPENDENCIES
+
+Already installed (verify in package.json):
+- react-native-confetti-cannon
+- expo-blur
+- expo-haptics
+
+If missing, install:
+```bash
+cd apps/mobile && npx expo install react-native-confetti-cannon expo-blur expo-haptics
+```
+
+## VALIDATION CRITERIA
+
+1. **BadgeDetailModal:**
+   - [ ] Modal opens when tapping badge in grid
+   - [ ] Shows large icon, name, description, tier
+   - [ ] Shows earned date for earned badges
+   - [ ] Shows progress/locked state for unearned badges
+   - [ ] Close button dismisses modal
+
+2. **BadgeCelebration:**
+   - [ ] Confetti fires on mount
+   - [ ] Haptic feedback triggers
+   - [ ] Badge animates in
+   - [ ] Auto-dismisses after 4 seconds
+   - [ ] Tap dismisses immediately
+
+3. **Workout Integration:**
+   - [ ] After completing workout, checkBadgesAfterWorkout is called
+   - [ ] If new badges earned, celebration shows
+   - [ ] Multiple badges queue (show first, then rest)
+
+4. **Run Integration:**
+   - [ ] After completing run, checkBadgesAfterRun is called
+   - [ ] If new badges earned, celebration shows
+
+5. **General:**
+   - [ ] TypeScript compiles: `cd apps/mobile && npx tsc --noEmit`
+   - [ ] No hardcoded colors or spacing values
+   - [ ] Components use theme tokens
+
+## FILES TO CREATE/MODIFY
+
+Create:
+- apps/mobile/src/components/badges/BadgeDetailModal.tsx
+- apps/mobile/src/components/badges/BadgeCelebration.tsx
+
+Modify:
+- apps/mobile/app/badges.tsx (add modal integration)
+- apps/mobile/app/(tabs)/workout.tsx (add celebration after save)
+- apps/mobile/app/(tabs)/run.tsx (add celebration after save)
+
+## TESTING
+
+Manual test flow:
+1. Navigate to Badges screen
+2. Tap a badge - verify modal opens with details
+3. Close modal
+4. Complete a workout - verify badge check happens
+5. (If new badge earned) verify celebration shows
+6. Complete a run - same verification

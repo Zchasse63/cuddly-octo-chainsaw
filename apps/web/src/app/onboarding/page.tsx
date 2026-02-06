@@ -15,7 +15,9 @@ import {
   Phone,
   Globe,
   Upload,
+  AlertCircle,
 } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
 
 type OnboardingStep = 'welcome' | 'business' | 'profile' | 'features' | 'import' | 'complete';
 
@@ -53,6 +55,7 @@ const SPECIALTIES = [
 export default function CoachOnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState<OnboardingStep>('welcome');
+  const [error, setError] = useState('');
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>({
     businessName: '',
     businessType: 'individual',
@@ -66,6 +69,17 @@ export default function CoachOnboardingPage() {
     certifications: [],
   });
   const [newCertification, setNewCertification] = useState('');
+
+  // Setup TRPC mutation for updating profile
+  const updateProfile = trpc.coachDashboard.updateProfile.useMutation({
+    onSuccess: () => {
+      // Profile saved successfully - redirect to dashboard
+      router.push('/dashboard');
+    },
+    onError: (err) => {
+      setError(err.message || 'Failed to save profile');
+    },
+  });
 
   const steps: OnboardingStep[] = ['welcome', 'business', 'profile', 'features', 'import', 'complete'];
   const currentIndex = steps.indexOf(step);
@@ -86,8 +100,29 @@ export default function CoachOnboardingPage() {
   };
 
   const handleComplete = async () => {
-    // TODO: Save onboarding data to backend
-    router.push('/dashboard');
+    // Clear any previous errors
+    setError('');
+
+    // Validate required fields
+    if (!profileInfo.displayName.trim()) {
+      setError('Please enter your display name');
+      setStep('profile');
+      return;
+    }
+
+    if (profileInfo.specialties.length === 0) {
+      setError('Please select at least one specialty');
+      setStep('profile');
+      return;
+    }
+
+    // Call the updateProfile mutation with onboarding data
+    updateProfile.mutate({
+      name: profileInfo.displayName,
+      bio: profileInfo.bio,
+      specialties: profileInfo.specialties,
+      hourlyRate: undefined, // Can be added to form later if needed
+    });
   };
 
   const toggleSpecialty = (specialty: string) => {
@@ -265,6 +300,13 @@ export default function CoachOnboardingPage() {
         This information will be visible to your clients
       </p>
 
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+        </div>
+      )}
+
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -438,7 +480,7 @@ export default function CoachOnboardingPage() {
         <div
           className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 text-center hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer"
           onClick={() => {
-            // TODO: Open file picker
+            // File picker not implemented - CSV import feature pending
           }}
         >
           <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -471,44 +513,61 @@ export default function CoachOnboardingPage() {
 
   const renderComplete = () => (
     <div className="text-center max-w-xl mx-auto">
-      <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-        <Check className="w-10 h-10 text-green-600 dark:text-green-400" />
-      </div>
-      <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
-        You&apos;re All Set!
-      </h2>
-      <p className="text-lg text-gray-600 dark:text-gray-300 mb-8">
-        Your coaching dashboard is ready. Start adding clients and building programs.
-      </p>
+      {updateProfile.isPending ? (
+        <>
+          <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+            <Check className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            Setting up your dashboard...
+          </h2>
+          <p className="text-lg text-gray-600 dark:text-gray-300 mb-8">
+            We&apos;re saving your profile information and getting your coaching dashboard ready.
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Check className="w-10 h-10 text-green-600 dark:text-green-400" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            You&apos;re All Set!
+          </h2>
+          <p className="text-lg text-gray-600 dark:text-gray-300 mb-8">
+            Your coaching dashboard is ready. Start adding clients and building programs.
+          </p>
 
-      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-6 mb-8 text-left">
-        <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Quick Start Tips:</h3>
-        <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-          <li className="flex items-start">
-            <span className="text-blue-600 mr-2">1.</span>
-            Add your first client from the Clients page
-          </li>
-          <li className="flex items-start">
-            <span className="text-blue-600 mr-2">2.</span>
-            Create a training program in the Programs section
-          </li>
-          <li className="flex items-start">
-            <span className="text-blue-600 mr-2">3.</span>
-            Assign the program to your client
-          </li>
-          <li className="flex items-start">
-            <span className="text-blue-600 mr-2">4.</span>
-            Monitor their progress from the dashboard
-          </li>
-        </ul>
-      </div>
+          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-6 mb-8 text-left">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Quick Start Tips:</h3>
+            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+              <li className="flex items-start">
+                <span className="text-blue-600 mr-2">1.</span>
+                Add your first client from the Clients page
+              </li>
+              <li className="flex items-start">
+                <span className="text-blue-600 mr-2">2.</span>
+                Create a training program in the Programs section
+              </li>
+              <li className="flex items-start">
+                <span className="text-blue-600 mr-2">3.</span>
+                Assign the program to your client
+              </li>
+              <li className="flex items-start">
+                <span className="text-blue-600 mr-2">4.</span>
+                Monitor their progress from the dashboard
+              </li>
+            </ul>
+          </div>
 
-      <button
-        onClick={handleComplete}
-        className="px-8 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-      >
-        Go to Dashboard
-      </button>
+          <button
+            onClick={handleComplete}
+            className="px-8 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={updateProfile.isPending}
+          >
+            Go to Dashboard
+          </button>
+        </>
+      )}
     </div>
   );
 
@@ -538,6 +597,14 @@ export default function CoachOnboardingPage() {
             className="h-full bg-blue-600 transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
+        </div>
+      )}
+
+      {/* Global error display */}
+      {error && step === 'complete' && (
+        <div className="fixed top-4 right-4 max-w-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 flex items-start gap-3 shadow-lg">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
         </div>
       )}
 

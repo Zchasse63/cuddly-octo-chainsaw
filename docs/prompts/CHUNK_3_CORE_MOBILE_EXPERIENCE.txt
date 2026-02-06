@@ -1,0 +1,346 @@
+Complete CHUNK 3: Core Mobile Experience for VoiceFit 2.0.
+
+Reference the full audit at docs/audits/FULL_PROJECT_AUDIT.md for context.
+Reference docs/UI_SPECIFICATION.md for all styling guidelines.
+
+This chunk completes the 4 main tabs - the core app experience users interact with daily.
+
+## PROJECT STRUCTURE
+
+Mobile app: apps/mobile/
+- Tab screens at apps/mobile/app/(tabs)/ - index.tsx (Home), chat.tsx, run.tsx, workout.tsx
+- Components at apps/mobile/src/components/
+- Hooks at apps/mobile/src/hooks/
+- Stores at apps/mobile/src/stores/
+- Theme at apps/mobile/src/theme/tokens.ts
+- tRPC client at apps/mobile/src/lib/trpc.ts
+
+Backend routers at apps/backend/src/routers/ - use existing tRPC endpoints.
+
+## CURRENT STATE
+
+The tabs have partial implementations:
+- Home (index.tsx): ~60% - has tRPC queries, needs TodaysWorkoutCard, WeeklySummary, ReadinessPromptModal
+- Chat (chat.tsx): ~70% - has message UI, needs voice recording wired, confirmation cards
+- Run (run.tsx): ~40% - has basic UI, needs GPS tracking, map, stats overlay
+- Workout (workout.tsx): ~30% - has structure, needs exercise search, set logging, rest timer
+
+## TASK 3.1: Complete Home Tab (index.tsx)
+
+### TodaysWorkoutCard Component
+Create apps/mobile/src/components/home/TodaysWorkoutCard.tsx:
+```typescript
+// Shows today's scheduled workout from the user's program
+// Props: workout data from api.calendar.getToday
+// Features:
+// - Workout name and estimated duration
+// - List of exercises with sets/reps (collapsible, show first 3)
+// - "Start Workout" button that navigates to /(tabs)/workout with workout preloaded
+// - "Skip" option that marks workout as skipped
+// - Empty state if no workout scheduled
+```
+
+### WeeklySummary Component
+Create apps/mobile/src/components/home/WeeklySummary.tsx:
+```typescript
+// Shows this week's training summary
+// Data from api.analytics.getCurrentWeekSummary
+// Features:
+// - Total workouts completed vs planned
+// - Total volume (sets × reps × weight)
+// - PRs achieved this week
+// - Circular progress indicator for weekly goal
+```
+
+### RecentActivityList Component
+Create apps/mobile/src/components/home/RecentActivityList.tsx:
+```typescript
+// Shows recent workouts and runs
+// Data from api.workout.history + api.running.history
+// Features:
+// - Infinite scroll with FlatList (or FlashList if installed)
+// - Mix of workout and run cards, sorted by date
+// - Each card shows: type icon, name, date, duration, key stats
+// - Tap to navigate to detail screen
+```
+
+### ReadinessPromptModal Component
+Create apps/mobile/src/components/home/ReadinessPromptModal.tsx:
+```typescript
+// Modal that prompts user for daily readiness check-in
+// Shows automatically on first app open if no readiness logged today
+// Features:
+// - 4 sliders (1-10): Sleep Quality, Energy Level, Motivation, Soreness
+// - Optional notes text input
+// - Submit button that calls api.readiness.logReadiness.useMutation()
+// - Skip option
+// - Haptic feedback on slider changes
+```
+
+Update apps/mobile/app/(tabs)/index.tsx to:
+1. Import and use these new components
+2. Show ReadinessPromptModal if no readiness logged today
+3. Show TodaysWorkoutCard at top if workout scheduled
+4. Show WeeklySummary card
+5. Show RecentActivityList with infinite scroll
+
+## TASK 3.2: Complete Chat Tab (chat.tsx)
+
+### Wire Voice Recording
+The useVoiceRecorder hook exists at apps/mobile/src/hooks/useVoiceRecorder.ts.
+Wire it to the voice router:
+
+1. When recording completes, send audio to api.voice.transcribe
+2. Pipe transcription to api.voice.parse for intent detection
+3. Display parsed result in chat
+
+### WorkoutConfirmationCard Component
+Create apps/mobile/src/components/chat/WorkoutConfirmationCard.tsx:
+```typescript
+// Shows when AI parses a workout from voice
+// Features:
+// - Exercise list with sets/reps/weight
+// - "Edit" button to modify before saving
+// - "Confirm" button that calls api.workout.logWorkout.useMutation()
+// - "Cancel" button to dismiss
+// - Expandable to show raw transcription
+```
+
+### ExerciseSubstitutionCard Component
+Create apps/mobile/src/components/chat/ExerciseSubstitutionCard.tsx:
+```typescript
+// Shows when AI suggests exercise substitution
+// Features:
+// - Original exercise name
+// - Suggested substitute with reason (e.g., "easier on shoulders")
+// - "Accept" and "Keep Original" buttons
+// - Animation on accept (checkmark)
+```
+
+### Error Handling
+Add retry logic for AI calls:
+- Show "Retry" button if transcription fails
+- Show "Try again" if parsing fails
+- Toast notifications for errors
+
+## TASK 3.3: Complete Running Tab (run.tsx)
+
+### GPS Tracking
+Implement GPS tracking using expo-location:
+```typescript
+import * as Location from 'expo-location';
+
+// Request permissions on tab focus
+// Use Location.watchPositionAsync for continuous tracking
+// Store coordinates in local state during run
+// Calculate distance using Haversine formula
+// Calculate pace from distance/time
+```
+
+### ActiveRunMap Component
+Create apps/mobile/src/components/running/ActiveRunMap.tsx:
+```typescript
+// Real-time map showing run route
+// Uses react-native-maps (already in package.json)
+// Features:
+// - Map centered on current location
+// - Polyline showing route traveled
+// - Current location marker (pulsing dot)
+// - Auto-follow mode (toggleable)
+```
+
+### RunStatsOverlay Component
+Create apps/mobile/src/components/running/RunStatsOverlay.tsx:
+```typescript
+// Overlay showing live stats during run
+// Features:
+// - Current pace (min/km or min/mile based on settings)
+// - Total distance
+// - Elapsed time (large, prominent)
+// - Current split time
+// - Heart rate if available from wearable
+```
+
+### Pause/Resume Functionality
+Add pause/resume to run.tsx:
+- Pause button stops GPS tracking but keeps timer paused
+- Resume button continues tracking
+- State persists if app backgrounds
+
+### PreRunSetup Component
+Create apps/mobile/src/components/running/PreRunSetup.tsx:
+```typescript
+// Bottom sheet before starting run
+// Features:
+// - Shoe selector (from api.running.getShoes)
+// - Run type picker: Easy, Tempo, Interval, Long Run, Race
+// - Optional target distance/time
+// - "Start Run" button
+```
+
+### RunSummaryScreen
+Update the post-run summary in run.tsx:
+- Show route map with full polyline
+- Stats summary: distance, time, pace, elevation
+- Splits table (per km/mile)
+- PRs achieved (if any)
+- Save button that calls api.running.saveRun.useMutation()
+- Share button (optional)
+
+## TASK 3.4: Complete Workout Tab (workout.tsx)
+
+### ExerciseSelector Component
+Create apps/mobile/src/components/workout/ExerciseSelector.tsx:
+```typescript
+// Search and select exercises
+// Features:
+// - Search input with debounced autocomplete
+// - Uses api.search.exercises for search
+// - Filter by muscle group, equipment
+// - Recent exercises section
+// - Tap to select, adds to current workout
+```
+
+### SetLoggingForm Component
+Create apps/mobile/src/components/workout/SetLoggingForm.tsx:
+```typescript
+// Form to log a single set
+// Features:
+// - Weight input (numeric keyboard)
+// - Reps input (numeric keyboard)
+// - RPE slider (1-10, optional)
+// - Notes input (optional)
+// - "Log Set" button
+// - Previous set reference (e.g., "Last: 135×8")
+// - Auto-increment weight suggestion
+```
+
+### VoiceLoggingButton Component
+Create apps/mobile/src/components/workout/VoiceLoggingButton.tsx:
+```typescript
+// FAB for voice logging during workout
+// Features:
+// - Pulsing animation while recording
+// - Uses useVoiceRecorder hook
+// - Sends to api.voice.parseWorkoutSet
+// - Shows quick confirmation or error
+// - Position: bottom-right, above tab bar
+```
+
+### RestTimer Component
+Create apps/mobile/src/components/workout/RestTimer.tsx:
+```typescript
+// Countdown timer between sets
+// Features:
+// - Circular progress indicator
+// - Configurable duration (30s, 60s, 90s, 120s, custom)
+// - Audio cue at 10s, 5s, 0s (optional, configurable)
+// - Haptic feedback at 0s
+// - Auto-start option after logging set
+// - Skip button
+```
+
+### PRCelebration Component
+Create apps/mobile/src/components/workout/PRCelebration.tsx:
+```typescript
+// Celebration when user hits a PR
+// Features:
+// - Confetti animation (reuse from onboarding)
+// - Haptic feedback
+// - "New PR!" text with exercise name and weight
+// - Auto-dismiss after 3 seconds
+// - Tap anywhere to dismiss
+```
+
+### WorkoutSummary Component
+Create apps/mobile/src/components/workout/WorkoutSummary.tsx:
+```typescript
+// Post-workout summary
+// Features:
+// - Duration
+// - Total volume (sets × reps × weight)
+// - Exercise count
+// - PRs achieved (highlighted)
+// - "Save Workout" button that calls api.workout.complete.useMutation()
+// - "Discard" option with confirmation
+```
+
+## INTEGRATION REQUIREMENTS
+
+### tRPC Endpoints to Use
+All endpoints already exist in backend routers:
+- api.workout.history, api.workout.logWorkout, api.workout.complete
+- api.running.getShoes, api.running.saveRun, api.running.history
+- api.readiness.today, api.readiness.logReadiness
+- api.calendar.getToday
+- api.search.exercises
+- api.voice.transcribe, api.voice.parse, api.voice.parseWorkoutSet
+- api.analytics.getCurrentWeekSummary
+- api.gamification.getStreaks
+
+### State Management
+Use existing Zustand stores:
+- useAuthStore for user
+- useWorkoutStore for active workout state (create if not exists)
+- useRunStore for active run state (create if not exists)
+
+### Styling
+All components MUST use:
+- colors from useTheme() hook
+- spacing, fontSize, fontWeight, borderRadius from tokens.ts
+- Follow patterns in existing components
+
+## VALIDATION CRITERIA
+
+This chunk is complete when:
+
+1. **Home Tab:**
+   - [ ] TodaysWorkoutCard shows scheduled workout or empty state
+   - [ ] WeeklySummary shows stats with circular progress
+   - [ ] RecentActivityList scrolls infinitely
+   - [ ] ReadinessPromptModal shows if no readiness today
+
+2. **Chat Tab:**
+   - [ ] Voice recording sends to transcription API
+   - [ ] WorkoutConfirmationCard shows parsed workout
+   - [ ] Confirm saves workout to database
+   - [ ] Error states have retry buttons
+
+3. **Running Tab:**
+   - [ ] GPS tracks location continuously
+   - [ ] Map shows route polyline in real-time
+   - [ ] Stats overlay shows pace/distance/time
+   - [ ] Pause/resume works correctly
+   - [ ] Summary shows after ending run
+   - [ ] Save persists run to database
+
+4. **Workout Tab:**
+   - [ ] Exercise search works with autocomplete
+   - [ ] Set logging form saves to database
+   - [ ] Voice FAB records and parses sets
+   - [ ] Rest timer counts down with audio/haptic
+   - [ ] PR celebration shows on new PR
+   - [ ] Summary saves completed workout
+
+5. **General:**
+   - [ ] TypeScript compiles: `cd apps/mobile && npx tsc --noEmit`
+   - [ ] App runs: `cd apps/mobile && npx expo start --ios`
+   - [ ] No console errors during normal usage
+
+## TESTING
+
+Manual test flow:
+1. Open app, verify Home tab loads with data
+2. If no readiness, verify modal appears
+3. Log readiness, verify it saves
+4. Navigate to Chat, record voice message
+5. Verify transcription appears
+6. Navigate to Run tab, start a run
+7. Verify GPS tracking and map work
+8. End run, verify summary and save
+9. Navigate to Workout tab
+10. Search for exercise, add to workout
+11. Log sets manually
+12. Use voice FAB to log a set
+13. Trigger rest timer
+14. Complete workout, verify summary

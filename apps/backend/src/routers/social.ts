@@ -536,6 +536,6 @@ export const socialRouter = router({
       WHERE user_id = ${ctx.user.id} AND is_read = false
     `);
 
-    return { count: Number(result.rows[0]?.count || 0) };
+    return { count: Number((result as unknown as Array<{ count: number }>)[0]?.count || 0) };
   }),
 });

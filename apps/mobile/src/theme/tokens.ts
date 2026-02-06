@@ -39,6 +39,16 @@ export const lightColors = {
     red: '#FF3B30',
   },
 
+  // Activity type colors
+  activity: {
+    running: '#4ECDC4',
+    strength: '#FF6B6B',
+    tempo: '#FFE66D',
+    interval: '#FF6B6B',
+    recovery: '#34C759',
+    rest: '#6C757D',
+  },
+
   // Semantic
   semantic: {
     primary: '#007AFF',
@@ -54,6 +64,18 @@ export const lightColors = {
     subtle: '#E9ECEF',
     light: '#E9ECEF',
     medium: '#6C757D',
+    default: '#DEE2E6',
+  },
+
+  // Status colors
+  status: {
+    success: '#34C759',
+    warning: '#FF9500',
+    error: '#FF3B30',
+    info: '#5AC8FA',
+    active: '#34C759',
+    inactive: '#ADB5BD',
+    pending: '#FF9500',
   },
 
   // Tints
@@ -118,6 +140,16 @@ export const darkColors = {
     red: '#FF453A',
   },
 
+  // Activity type colors
+  activity: {
+    running: '#4ECDC4',
+    strength: '#FF6B6B',
+    tempo: '#FFE66D',
+    interval: '#FF6B6B',
+    recovery: '#30D158',
+    rest: '#98989D',
+  },
+
   // Semantic
   semantic: {
     primary: '#0A84FF',
@@ -133,6 +165,18 @@ export const darkColors = {
     subtle: '#2C2C2E',
     light: '#2C2C2E',
     medium: '#48484A',
+    default: '#3A3A3C',
+  },
+
+  // Status colors
+  status: {
+    success: '#30D158',
+    warning: '#FF9F0A',
+    error: '#FF453A',
+    info: '#64D2FF',
+    active: '#30D158',
+    inactive: '#48484A',
+    pending: '#FF9F0A',
   },
 
   // Tints
@@ -169,10 +213,12 @@ export const fontSize = {
   xl: 24,
   '2xl': 28,
   '3xl': 34,
+  '4xl': 40,
 };
 
 export const fontWeight = {
   regular: '400' as const,
+  normal: '400' as const,
   medium: '500' as const,
   semibold: '600' as const,
   bold: '700' as const,
@@ -198,6 +244,14 @@ export const borderRadius = {
   '2xl': 22,
   '3xl': 24,
   full: 9999,
+};
+
+// Medal colors for leaderboard/badges
+export const medalColors = {
+  gold: '#FFD700',
+  silver: '#C0C0C0',
+  bronze: '#CD7F32',
+  platinum: '#E5E4E2',
 };
 
 // Shadows

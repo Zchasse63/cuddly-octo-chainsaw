@@ -23,7 +23,10 @@ For active development, refer to:
 | `SUPABASE_DATABASE_SCHEMA_REPORT.md` | Database analysis | `schema.sql` (actual implementation) |
 | `ARCHITECTURE_DEEP_DIVE.md` | Architecture notes | Backend is implemented |
 | `BUILD_INSTRUCTIONS.md` | Build steps | May need updating |
+| `README-2.md` | Marketing-oriented README | Updated root `README.md` |
+| `OPENAI_TO_VERCEL_AI_SDK_MIGRATION_TEMPLATE.md` | Migration audit template | `TOOL_CALLING_MIGRATION_PLAN.md` (migration complete) |
+| `CHUNKED_IMPLEMENTATION_PLAN.md` | 7-chunk execution plan (Jan 2026) | `PROJECT_COMPLETION_ROADMAP.md` |
 
 ---
 
-*Archived: November 26, 2025*
+*Last updated: February 6, 2026*

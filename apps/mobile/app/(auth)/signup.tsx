@@ -1,23 +1,23 @@
-import { View, Text, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { useState } from 'react';
-import { Mic } from 'lucide-react-native';
+import { Mic, Apple, Chrome, Check } from 'lucide-react-native';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Button, Input, Toast } from '../../src/components/ui';
 import { useAuthStore } from '../../src/stores/auth';
-import { spacing, fontSize, fontWeight } from '../../src/theme/tokens';
+import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
 
 export default function SignupScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const signUp = useAuthStore((state) => state.signUp);
-  const isLoading = useAuthStore((state) => state.isLoading);
+  const { signUp, signInWithApple, signInWithGoogle, isLoading } = useAuthStore();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'error' | 'success' }>({
     visible: false,
     message: '',
@@ -25,6 +25,11 @@ export default function SignupScreen() {
   });
 
   const handleSignup = async () => {
+    if (!termsAccepted) {
+      setToast({ visible: true, message: 'Please accept the terms and privacy policy', type: 'error' });
+      return;
+    }
+
     if (!name || !email || !password || !confirmPassword) {
       setToast({ visible: true, message: 'Please fill in all fields', type: 'error' });
       return;
@@ -46,6 +51,36 @@ export default function SignupScreen() {
       router.replace('/(tabs)');
     } else {
       setToast({ visible: true, message: result.error || 'Signup failed', type: 'error' });
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    if (!termsAccepted) {
+      setToast({ visible: true, message: 'Please accept the terms and privacy policy', type: 'error' });
+      return;
+    }
+
+    const result = await signInWithApple();
+
+    if (result.success) {
+      router.replace('/(tabs)');
+    } else {
+      setToast({ visible: true, message: result.error || 'Apple sign in failed', type: 'error' });
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    if (!termsAccepted) {
+      setToast({ visible: true, message: 'Please accept the terms and privacy policy', type: 'error' });
+      return;
+    }
+
+    const result = await signInWithGoogle();
+
+    if (result.success) {
+      router.replace('/(tabs)');
+    } else {
+      setToast({ visible: true, message: result.error || 'Google sign in failed', type: 'error' });
     }
   };
 
@@ -105,6 +140,54 @@ export default function SignupScreen() {
             </Text>
           </View>
 
+          {/* OAuth buttons */}
+          <View style={{ marginBottom: spacing.lg, gap: spacing.sm }}>
+            <Button
+              onPress={handleAppleSignIn}
+              loading={isLoading}
+              fullWidth
+              style={{
+                backgroundColor: colors.text.primary,
+                borderRadius: borderRadius.lg,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Apple size={20} color={colors.background.primary} />
+                <Text style={{ color: colors.background.primary, fontSize: fontSize.base, fontWeight: fontWeight.semibold }}>
+                  Continue with Apple
+                </Text>
+              </View>
+            </Button>
+
+            <Button
+              onPress={handleGoogleSignIn}
+              loading={isLoading}
+              fullWidth
+              style={{
+                backgroundColor: colors.background.secondary,
+                borderWidth: 1,
+                borderColor: colors.border.primary,
+                borderRadius: borderRadius.lg,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Chrome size={20} color={colors.text.primary} />
+                <Text style={{ color: colors.text.primary, fontSize: fontSize.base, fontWeight: fontWeight.semibold }}>
+                  Continue with Google
+                </Text>
+              </View>
+            </Button>
+          </View>
+
+          {/* Divider */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border.primary }} />
+            <Text style={{ marginHorizontal: spacing.md, fontSize: fontSize.sm, color: colors.text.tertiary }}>
+              or
+            </Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border.primary }} />
+          </View>
+
           {/* Form */}
           <View style={{ marginBottom: spacing.lg }}>
             <Input
@@ -147,8 +230,49 @@ export default function SignupScreen() {
             />
           </View>
 
+          {/* Terms checkbox */}
+          <TouchableOpacity
+            onPress={() => setTermsAccepted(!termsAccepted)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: spacing.lg,
+              gap: spacing.sm,
+            }}
+          >
+            <View
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                borderWidth: 2,
+                borderColor: termsAccepted ? colors.accent.blue : colors.border.primary,
+                backgroundColor: termsAccepted ? colors.accent.blue : 'transparent',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              {termsAccepted && <Check size={14} color={colors.text.onAccent} />}
+            </View>
+            <Text style={{ flex: 1, fontSize: fontSize.sm, color: colors.text.secondary }}>
+              I agree to the{' '}
+              <Text style={{ color: colors.accent.blue, fontWeight: fontWeight.semibold }}>
+                Terms of Service
+              </Text>
+              {' '}and{' '}
+              <Text style={{ color: colors.accent.blue, fontWeight: fontWeight.semibold }}>
+                Privacy Policy
+              </Text>
+            </Text>
+          </TouchableOpacity>
+
           {/* Actions */}
-          <Button onPress={handleSignup} loading={isLoading} fullWidth>
+          <Button
+            onPress={handleSignup}
+            loading={isLoading}
+            disabled={!termsAccepted}
+            fullWidth
+          >
             Create Account
           </Button>
 

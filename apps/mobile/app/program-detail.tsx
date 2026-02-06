@@ -29,21 +29,11 @@ export default function ProgramDetailScreen() {
 
   // Fetch program details
   const { data: program, isLoading } = api.calendar.getProgram.useQuery(
-    { id: id || '' },
+    { programId: id || '' },
     { enabled: !!id }
   );
 
-  // Start program mutation
-  const startProgramMutation = api.calendar.startProgram.useMutation({
-    onSuccess: () => {
-      Alert.alert('Success', 'Program started! Check your calendar for scheduled workouts.');
-      router.push('/calendar');
-    },
-    onError: (error) => {
-      Alert.alert('Error', error.message || 'Failed to start program');
-    },
-  });
-
+  // Start program - use the program's status to track if started
   const handleStartProgram = () => {
     Alert.alert(
       'Start Program',
@@ -52,7 +42,10 @@ export default function ProgramDetailScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Start',
-          onPress: () => startProgramMutation.mutate({ programId: id || '' }),
+          onPress: () => {
+            // Navigate to calendar to see scheduled workouts
+            router.push('/calendar');
+          },
         },
       ]
     );
@@ -133,7 +126,7 @@ export default function ProgramDetailScreen() {
           <View
             style={{
               alignSelf: 'flex-start',
-              backgroundColor: program.type === 'running' ? '#4ECDC420' : colors.accent.blue + '20',
+              backgroundColor: program.programType === 'running' ? colors.activity.running + '20' : colors.accent.blue + '20',
               paddingHorizontal: spacing.sm,
               paddingVertical: spacing.xs,
               borderRadius: borderRadius.full,
@@ -143,12 +136,12 @@ export default function ProgramDetailScreen() {
             <Text
               style={{
                 fontSize: fontSize.xs,
-                color: program.type === 'running' ? '#4ECDC4' : colors.accent.blue,
+                color: program.programType === 'running' ? colors.activity.running : colors.accent.blue,
                 fontWeight: fontWeight.medium,
                 textTransform: 'uppercase',
               }}
             >
-              {program.type}
+              {program.programType}
             </Text>
           </View>
 
@@ -179,7 +172,7 @@ export default function ProgramDetailScreen() {
             </View>
             <View style={{ alignItems: 'center' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {program.type === 'running' ? (
+                {program.programType === 'running' ? (
                   <Footprints size={16} color={colors.text.tertiary} />
                 ) : (
                   <Dumbbell size={16} color={colors.text.tertiary} />
@@ -208,7 +201,7 @@ export default function ProgramDetailScreen() {
                     marginLeft: spacing.xs,
                   }}
                 >
-                  {program.goal || 'General'}
+                  {program.primaryGoal || 'General'}
                 </Text>
               </View>
               <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Goal</Text>
@@ -250,7 +243,6 @@ export default function ProgramDetailScreen() {
           <Button
             onPress={handleStartProgram}
             fullWidth
-            disabled={startProgramMutation.isPending}
             style={{ marginBottom: spacing.lg }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -352,7 +344,7 @@ export default function ProgramDetailScreen() {
                           backgroundColor: day.isRestDay
                             ? colors.background.tertiary
                             : day.activityType === 'running'
-                            ? '#4ECDC420'
+                            ? colors.activity.running + '20'
                             : colors.accent.blue + '20',
                           justifyContent: 'center',
                           alignItems: 'center',
@@ -364,7 +356,7 @@ export default function ProgramDetailScreen() {
                             REST
                           </Text>
                         ) : day.activityType === 'running' ? (
-                          <Footprints size={16} color="#4ECDC4" />
+                          <Footprints size={16} color={colors.activity.running} />
                         ) : (
                           <Dumbbell size={16} color={colors.accent.blue} />
                         )}

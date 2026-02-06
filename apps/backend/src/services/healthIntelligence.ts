@@ -1,8 +1,8 @@
 import { sql, eq, and, gte, lte, desc } from 'drizzle-orm';
-import { readinessCheckIns } from '../db/schema/readiness';
+import { readinessScores } from '../db/schema/readiness';
 import { workouts } from '../db/schema/workouts';
 import { runningActivities } from '../db/schema/running';
-import { generateGrokResponse } from '../lib/grok';
+import { generateCompletion, TEMPERATURES } from '../lib/ai';
 
 // Correlation types
 type CorrelationType =
@@ -60,12 +60,22 @@ export class HealthIntelligenceService {
       return []; // Not enough data for meaningful correlations
     }
 
+    // Convert snake_case to numbers (database returns strings)
+    const normalizedData = data.map((d) => ({
+      nutrition_score: Number(d.nutrition_score) || 0,
+      recovery_score: Number(d.recovery_score) || 0,
+      sleep_hours: Number(d.sleep_hours) || 0,
+      workout_volume: Number(d.workout_volume) || 0,
+      stress_level: Number(d.stress_level) || 0,
+      workout_quality: Number(d.workoutQuality) || 0,
+    }));
+
     const correlations: CorrelationResult[] = [];
 
     // Nutrition ↔ Recovery
     const nutritionRecovery = this.calculateCorrelation(
-      data.map((d) => d.nutritionScore || 0),
-      data.map((d) => d.recoveryScore || 0)
+      normalizedData.map((d) => d.nutrition_score),
+      normalizedData.map((d) => d.recovery_score)
     );
     correlations.push({
       type: 'nutrition_recovery',
@@ -76,8 +86,8 @@ export class HealthIntelligenceService {
 
     // Sleep ↔ Performance (workout volume next day)
     const sleepPerformance = this.calculateCorrelation(
-      data.slice(0, -1).map((d) => d.sleepHours || 0),
-      data.slice(1).map((d) => d.workoutVolume || 0)
+      normalizedData.slice(0, -1).map((d) => d.sleep_hours),
+      normalizedData.slice(1).map((d) => d.workout_volume)
     );
     correlations.push({
       type: 'sleep_performance',
@@ -88,8 +98,8 @@ export class HealthIntelligenceService {
 
     // Training Volume ↔ Recovery (next day)
     const volumeRecovery = this.calculateCorrelation(
-      data.slice(0, -1).map((d) => d.workoutVolume || 0),
-      data.slice(1).map((d) => d.recoveryScore || 0)
+      normalizedData.slice(0, -1).map((d) => d.workout_volume),
+      normalizedData.slice(1).map((d) => d.recovery_score)
     );
     correlations.push({
       type: 'volume_recovery',
@@ -100,8 +110,8 @@ export class HealthIntelligenceService {
 
     // Sleep ↔ Workout Quality
     const sleepWorkout = this.calculateCorrelation(
-      data.map((d) => d.sleepHours || 0),
-      data.map((d) => d.workoutQuality || 0)
+      normalizedData.map((d) => d.sleep_hours),
+      normalizedData.map((d) => d.workout_quality)
     );
     correlations.push({
       type: 'sleep_workout_quality',
@@ -112,8 +122,8 @@ export class HealthIntelligenceService {
 
     // Stress ↔ Performance
     const stressPerformance = this.calculateCorrelation(
-      data.map((d) => d.stressLevel || 0),
-      data.map((d) => d.workoutVolume || 0)
+      normalizedData.map((d) => d.stress_level),
+      normalizedData.map((d) => d.workout_volume)
     );
     correlations.push({
       type: 'stress_performance',
@@ -229,10 +239,12 @@ ${correlations.map((c) => `- ${c.type}: ${c.strength} ${c.direction} correlation
 Based on this data, provide 3-4 specific, actionable recommendations to improve performance and recovery. Be concise and practical.`;
 
     try {
-      const response = await generateGrokResponse(prompt, {
+      const response = await generateCompletion({
         systemPrompt:
           'You are a sports science expert providing personalized health and performance insights based on data analysis. Be specific, scientific, and actionable.',
+        userPrompt: prompt,
         maxTokens: 500,
+        temperature: TEMPERATURES.insights,
       });
 
       return response;

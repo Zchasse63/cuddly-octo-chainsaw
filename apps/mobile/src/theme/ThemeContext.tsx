@@ -3,13 +3,15 @@ import { useColorScheme } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { lightColors, darkColors, ThemeColors } from './tokens';
 
-type ThemeMode = 'light' | 'dark' | 'auto';
+export type ThemeMode = 'light' | 'dark' | 'auto' | 'system';
 
-interface ThemeContextValue {
+export interface ThemeContextValue {
   theme: ThemeMode;
+  mode: ThemeMode;  // Alias for theme
   isDark: boolean;
   colors: ThemeColors;
   setTheme: (theme: ThemeMode) => void;
+  setMode: (mode: ThemeMode) => void;  // Alias for setTheme
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -30,15 +32,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setThemeState(saved as ThemeMode);
         }
       } catch (error) {
-        console.log('Failed to load theme preference');
+        // Theme preference load failed silently
       }
       setIsLoaded(true);
     }
     loadTheme();
   }, []);
 
-  // Calculate if dark mode
-  const isDark = theme === 'auto'
+  // Calculate if dark mode (both 'auto' and 'system' follow system preference)
+  const isDark = (theme === 'auto' || theme === 'system')
     ? systemColorScheme === 'dark'
     : theme === 'dark';
 
@@ -51,7 +53,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     try {
       await SecureStore.setItemAsync(THEME_STORAGE_KEY, newTheme);
     } catch (error) {
-      console.log('Failed to save theme preference');
+      // Theme preference save failed silently
     }
   };
 
@@ -61,7 +63,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, isDark, colors, setTheme }}>
+    <ThemeContext.Provider value={{ theme, mode: theme, isDark, colors, setTheme, setMode: setTheme }}>
       {children}
     </ThemeContext.Provider>
   );

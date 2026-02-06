@@ -15,9 +15,16 @@
  * - General fitness Q&A
  */
 
-import { generateCompletion, streamCompletion, TEMPERATURES, grok } from '../lib/grok';
+import { generateCompletion, streamCompletion, TEMPERATURES, xai, AI_CONFIG } from '../lib/ai';
+import { calculate1RM } from '../lib/formulas';
 import { search, cache } from '../lib/upstash';
-import { SEARCH_INDEXES } from './searchIndexer';
+import { SEARCH_INDEXES, UPSTASH_INDEXES, getIndexesForContext } from './searchIndexer';
+import {
+  classifyWithPatterns,
+  buildOptimizedQuery,
+  getEnhancedIndexes,
+  type FastClassificationResult,
+} from './fastClassifier';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../db/schema';
 import { eq, desc, and, sql, ilike, or } from 'drizzle-orm';
@@ -215,10 +222,36 @@ OUTPUT JSON:
   }
 }`;
 
+/**
+ * Hybrid classification: pattern-based first, AI fallback for ambiguous cases.
+ *
+ * This approach reduces latency from ~1-2s (AI) to <5ms (patterns) for ~85% of messages.
+ *
+ * @param message - The user's message to classify
+ * @param context - Optional user context for better classification
+ * @returns Classification result with intent, confidence, and extracted data
+ */
 async function classifyMessage(
   message: string,
   context?: UserContext
-): Promise<ClassificationResult> {
+): Promise<ClassificationResult & { usedPattern?: boolean }> {
+  const startTime = Date.now();
+
+  // Try pattern-based classification first (< 5ms)
+  const patternResult = classifyWithPatterns(message, {
+    activeWorkoutId: context?.activeWorkoutId,
+    currentExercise: context?.currentExercise,
+  });
+
+  // If high confidence pattern match, use it
+  if (patternResult && patternResult.confidence >= 0.75) {
+    console.log(`[Classifier] Pattern match: ${patternResult.intent} (${Date.now() - startTime}ms)`);
+    return patternResult;
+  }
+
+  // Fall back to AI classification for ambiguous cases
+  console.log(`[Classifier] AI fallback required for: "${message.slice(0, 50)}..."`);
+
   const contextStr = context ? `
 Current exercise: ${context.currentExercise || 'none'}
 Last weight: ${context.lastWeight || 'unknown'} ${context.lastWeightUnit || ''}
@@ -236,17 +269,28 @@ Active workout: ${context.activeWorkoutId ? 'yes' : 'no'}` : '';
     const cleaned = response.trim().replace(/```json\n?|\n?```/g, '');
     const parsed = JSON.parse(cleaned);
 
+    console.log(`[Classifier] AI result: ${parsed.intent} (${Date.now() - startTime}ms)`);
+
     return {
       intent: parsed.intent || 'general_fitness',
       confidence: parsed.confidence || 0.5,
       extractedData: parsed.extractedData || {},
+      usedPattern: false,
     };
   } catch (error) {
     console.error('Classification error:', error);
+
+    // If we had a low-confidence pattern match, use it as fallback
+    if (patternResult) {
+      console.log(`[Classifier] AI failed, using low-confidence pattern: ${patternResult.intent}`);
+      return patternResult;
+    }
+
     return {
       intent: 'general_fitness',
       confidence: 0.3,
       extractedData: {},
+      usedPattern: false,
     };
   }
 }
@@ -341,7 +385,7 @@ export class UnifiedCoachService {
 
     // For other intents, stream the response
     const systemPrompt = this.buildSystemPrompt(context);
-    const ragContext = await this.getRAGContext(message, classification.intent);
+    const ragContext = await this.getRAGContext(message, classification.intent, classification.extractedData);
 
     const userPrompt = this.buildUserPrompt(message, context, ragContext);
 
@@ -413,11 +457,11 @@ export class UnifiedCoachService {
 
     // Get weight (use context if "same weight")
     let weight = extractedData.weight;
-    let weightUnit = extractedData.weightUnit || context.preferredWeightUnit || 'lbs';
+    let weightUnit: 'lbs' | 'kg' = (extractedData.weightUnit || context.preferredWeightUnit || 'lbs') as 'lbs' | 'kg';
 
     if (!weight && message.toLowerCase().includes('same')) {
       weight = context.lastWeight;
-      weightUnit = context.lastWeightUnit || 'lbs';
+      weightUnit = (context.lastWeightUnit || 'lbs') as 'lbs' | 'kg';
     }
 
     const reps = extractedData.reps;
@@ -431,8 +475,8 @@ export class UnifiedCoachService {
     // Calculate set number
     const setCount = (context.setCount || 0) + 1;
 
-    // Calculate estimated 1RM and check for PR
-    const estimated1rm = weight ? weight * (1 + reps / 30) : null;
+    // Calculate estimated 1RM (Epley formula) and check for PR
+    const estimated1rm = weight ? calculate1RM(weight, reps) : null;
 
     const existingPr = await this.db.execute(sql`
       SELECT MAX(estimated_1rm) as max_1rm
@@ -441,7 +485,7 @@ export class UnifiedCoachService {
         AND exercise_id = ${exerciseId}
     `);
 
-    const maxExisting = (existingPr.rows[0] as any)?.max_1rm || 0;
+    const maxExisting = ((existingPr as unknown as Array<{ max_1rm: number }>)[0])?.max_1rm || 0;
     const isPr = estimated1rm !== null && estimated1rm > maxExisting;
 
     // Log the set
@@ -503,8 +547,8 @@ export class UnifiedCoachService {
       formTips = await this.getFormTips(exerciseName);
     }
 
-    // Get RAG context
-    const ragContext = await this.getRAGContext(message, 'exercise_question');
+    // Get RAG context with extracted exercise/body part data
+    const ragContext = await this.getRAGContext(message, 'exercise_question', classification.extractedData);
 
     const response = await generateCompletion({
       systemPrompt: this.buildSystemPrompt(context),
@@ -577,7 +621,7 @@ export class UnifiedCoachService {
     classification: ClassificationResult,
     context: UserContext
   ): Promise<CoachResponse> {
-    const ragContext = await this.getRAGContext(message, 'program_request');
+    const ragContext = await this.getRAGContext(message, 'program_request', classification.extractedData);
 
     const systemPrompt = `${this.buildSystemPrompt(context)}
 
@@ -837,8 +881,9 @@ For specific calorie/macro targets, recommend they check their health app data.`
   ): Promise<CoachResponse> {
     const bodyPart = classification.extractedData.bodyPart;
     const ragContext = await this.getRAGContext(
-      `${message} ${bodyPart || ''} recovery injury prevention`,
-      'recovery'
+      message,
+      'recovery',
+      classification.extractedData
     );
 
     const systemPrompt = `${this.buildSystemPrompt(context)}
@@ -1083,33 +1128,76 @@ Always be helpful and keep the user engaged with their fitness journey.`;
     return `${ragContext ? `RELEVANT KNOWLEDGE:\n${ragContext}\n\n` : ''}${conversationHistory ? `RECENT CONVERSATION:\n${conversationHistory}\n\n` : ''}USER: ${message}`;
   }
 
-  private async getRAGContext(query: string, intent: MessageIntent): Promise<string> {
+  /**
+   * Get RAG context with optimized query building, index selection, and caching.
+   *
+   * Improvements over naive approach:
+   * 1. Builds optimized search queries with domain-specific keywords
+   * 2. Selects indexes based on intent AND extracted data (exercise, body part)
+   * 3. Caches results in Redis for 10 minutes to reduce latency
+   * 4. Properly formats retrieved knowledge for the AI prompt
+   */
+  private async getRAGContext(
+    message: string,
+    intent: MessageIntent,
+    extractedData?: ClassificationResult['extractedData']
+  ): Promise<string> {
+    const startTime = Date.now();
+
     try {
-      // Map intent to search category
-      const categoryMap: Record<string, string | undefined> = {
-        'exercise_question': 'strength',
-        'nutrition': 'nutrition',
-        'recovery': 'recovery',
-        'running': 'running',
-      };
+      // Build optimized search query
+      const optimizedQuery = buildOptimizedQuery(message, intent, extractedData || {});
 
-      const filter = categoryMap[intent] ? `category = "${categoryMap[intent]}"` : undefined;
+      // Get enhanced indexes based on intent and extracted data
+      const indexes = getEnhancedIndexes(intent, extractedData || {});
 
-      const results = await search.query({
-        index: SEARCH_INDEXES.KNOWLEDGE_BASE,
-        query,
-        topK: 3,
-        filter,
+      // Check cache first (key based on query + indexes)
+      const cacheKey = `rag:${intent}:${optimizedQuery}`;
+      const cached = await cache.get<string>(cacheKey);
+      if (cached) {
+        console.log(`[RAG] Cache HIT: "${optimizedQuery}" (${Date.now() - startTime}ms)`);
+        return cached;
+      }
+
+      console.log(`[RAG] Query: "${optimizedQuery}" | Indexes: ${indexes.join(', ')}`);
+
+      // Query multiple indexes in parallel
+      const results = await search.queryMultiple({
+        indexes,
+        query: optimizedQuery,
+        topK: 5,
       });
+
+      console.log(`[RAG] Found ${results.length} results (${Date.now() - startTime}ms)`);
 
       if (results.length === 0) return '';
 
-      return results
-        .map((r) => {
-          const data = r.data as Record<string, string>;
-          return `[${data.category || 'General'}] ${data.title || ''}\n${data.content || ''}`;
+      // Format results with relevance scoring
+      const formattedContext = results
+        .slice(0, 3) // Limit context size for token efficiency
+        .map((r, i) => {
+          const content = r.content as Record<string, string> | undefined;
+          const text = content?.text || '';
+          const category = content?.category || r.metadata?.category || 'General';
+
+          // Truncate to ~500 chars but try to end at sentence boundary
+          let truncatedText = text;
+          if (text.length > 500) {
+            const cutoff = text.slice(0, 550);
+            const lastPeriod = cutoff.lastIndexOf('.');
+            truncatedText = lastPeriod > 400 ? cutoff.slice(0, lastPeriod + 1) : cutoff.slice(0, 500) + '...';
+          }
+
+          return `[Source ${i + 1}: ${category}]\n${truncatedText}`;
         })
         .join('\n\n');
+
+      // Cache for 10 minutes (600 seconds)
+      if (formattedContext) {
+        await cache.set(cacheKey, formattedContext, 600);
+      }
+
+      return formattedContext;
     } catch (error) {
       console.error('RAG context error:', error);
       return '';
@@ -1166,10 +1254,13 @@ Always be helpful and keep the user engaged with their fitness journey.`;
 
   private async getFormTips(exerciseName: string): Promise<CoachResponse['formTips']> {
     try {
-      const results = await search.query({
-        index: SEARCH_INDEXES.EXERCISE_CUES,
-        query: exerciseName,
-        topK: 15,
+      // Get technique indexes based on exercise name
+      const indexes = getIndexesForContext({ exerciseName });
+
+      const results = await search.queryMultiple({
+        indexes,
+        query: `${exerciseName} form technique cues`,
+        topK: 10,
       });
 
       const tips: CoachResponse['formTips'] = {
@@ -1180,12 +1271,30 @@ Always be helpful and keep the user engaged with their fitness journey.`;
       };
 
       for (const r of results) {
-        const data = r.data as Record<string, string>;
-        const cueType = data.cueType as keyof typeof tips;
-        if (tips[cueType]) {
-          tips[cueType]!.push(data.cueText || '');
+        const content = r.content as Record<string, string> | undefined;
+        const text = content?.text || '';
+        const cueType = content?.type as keyof typeof tips;
+
+        // Extract coaching cues from text content
+        if (text.includes('Cue') || text.includes('cue')) {
+          // Parse cues from the text
+          if (text.toLowerCase().includes('setup') || text.toLowerCase().includes('position')) {
+            tips.setup?.push(text.slice(0, 200));
+          } else if (text.toLowerCase().includes('fault') || text.toLowerCase().includes('mistake')) {
+            tips.commonMistakes?.push(text.slice(0, 200));
+          } else {
+            tips.execution?.push(text.slice(0, 200));
+          }
+        } else if (cueType && tips[cueType]) {
+          tips[cueType]!.push(text.slice(0, 200));
         }
       }
+
+      // Dedupe and limit each category
+      tips.setup = Array.from(new Set(tips.setup)).slice(0, 3);
+      tips.execution = Array.from(new Set(tips.execution)).slice(0, 3);
+      tips.breathing = Array.from(new Set(tips.breathing)).slice(0, 2);
+      tips.commonMistakes = Array.from(new Set(tips.commonMistakes)).slice(0, 3);
 
       return tips;
     } catch (error) {

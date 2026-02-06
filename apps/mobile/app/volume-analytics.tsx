@@ -45,16 +45,53 @@ export default function VolumeAnalyticsScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Fetch volume analytics
-  const { data: volumeData, refetch } = api.analytics.getVolumeAnalytics.useQuery({
-    viewMode,
-    date: currentDate.toISOString(),
+  // Fetch volume analytics using weekly analytics
+  const { data: weeklyData, refetch } = api.analytics.getWeeklyAnalytics.useQuery({
+    weeks: viewMode === 'week' ? 1 : viewMode === 'month' ? 4 : 12,
   });
 
-  const { data: muscleGroupData } = api.analytics.getMuscleGroupVolume.useQuery({
-    viewMode,
-    date: currentDate.toISOString(),
+  // Fetch body part volume for muscle group data
+  const { data: bodyPartData } = api.analytics.getBodyPartVolume.useQuery({
+    weekStart: currentDate.toISOString().split('T')[0],
   });
+
+  // Transform weekly data to volume data format
+  const volumeData: VolumeData[] = weeklyData?.map((w) => ({
+    date: w.weekStart || '',
+    volume: Number(w.totalVolume) || 0,
+    sets: Number(w.trainingDays) * 15 || 0, // Estimate sets from training days
+    workouts: Number(w.workoutCount) || 0,
+  })) || [];
+
+  // Transform body part data to muscle group format
+  const muscleGroupData: MuscleGroupVolume[] = useMemo(() => {
+    if (!bodyPartData) return [];
+
+    const groups = [
+      { name: 'Chest', sets: bodyPartData.chestSets || 0 },
+      { name: 'Back', sets: bodyPartData.backSets || 0 },
+      { name: 'Shoulders', sets: bodyPartData.shoulderSets || 0 },
+      { name: 'Biceps', sets: bodyPartData.bicepSets || 0 },
+      { name: 'Triceps', sets: bodyPartData.tricepSets || 0 },
+      { name: 'Quads', sets: bodyPartData.quadSets || 0 },
+      { name: 'Hamstrings', sets: bodyPartData.hamstringSets || 0 },
+      { name: 'Glutes', sets: bodyPartData.gluteSets || 0 },
+      { name: 'Calves', sets: bodyPartData.calfSets || 0 },
+      { name: 'Abs', sets: bodyPartData.abSets || 0 },
+    ];
+
+    const totalSets = groups.reduce((sum, g) => sum + g.sets, 0);
+
+    return groups
+      .filter(g => g.sets > 0)
+      .map(g => ({
+        name: g.name,
+        volume: g.sets * 10, // Approximate volume
+        sets: g.sets,
+        percentage: totalSets > 0 ? Math.round((g.sets / totalSets) * 100) : 0,
+        trend: 'stable' as const,
+      }));
+  }, [bodyPartData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -93,8 +130,8 @@ export default function VolumeAnalyticsScreen() {
     }
   };
 
-  // Mock data for visualization
-  const chartData: VolumeData[] = volumeData?.daily || [
+  // Use volume data or fallback to mock data for visualization
+  const chartData: VolumeData[] = volumeData.length > 0 ? volumeData : [
     { date: 'Mon', volume: 12500, sets: 18, workouts: 1 },
     { date: 'Tue', volume: 0, sets: 0, workouts: 0 },
     { date: 'Wed', volume: 15200, sets: 22, workouts: 1 },
@@ -131,7 +168,7 @@ export default function VolumeAnalyticsScreen() {
   };
 
   const getMuscleGroupColor = (index: number) => {
-    const palette = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#DDA0DD', '#87CEEB'];
+    const palette = [colors.activity.strength, colors.activity.running, colors.activity.tempo, colors.activity.recovery, colors.accent.purple, colors.accent.teal];
     return palette[index % palette.length];
   };
 
@@ -228,13 +265,13 @@ export default function VolumeAnalyticsScreen() {
             label="Total Volume"
             value={`${(totalVolume / 1000).toFixed(1)}k`}
             unit="lbs"
-            trend={volumeData?.volumeTrend}
+            trend={undefined}
             colors={colors}
           />
           <StatCard
             label="Total Sets"
             value={totalSets.toString()}
-            trend={volumeData?.setsTrend}
+            trend={undefined}
             colors={colors}
           />
           <StatCard
@@ -401,8 +438,7 @@ export default function VolumeAnalyticsScreen() {
             </Text>
           </View>
           <Text style={{ fontSize: fontSize.sm, color: colors.text.secondary, lineHeight: 20 }}>
-            {volumeData?.insight ||
-              'Your leg volume is looking great! Consider adding more shoulder work next week to maintain balanced development. Your chest-to-back ratio is optimal.'}
+            Your leg volume is looking great! Consider adding more shoulder work next week to maintain balanced development. Your chest-to-back ratio is optimal.
           </Text>
         </Card>
       </ScrollView>

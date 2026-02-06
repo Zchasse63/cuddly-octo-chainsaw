@@ -21,14 +21,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         try {
           await SecureStore.setItemAsync(key, value);
         } catch {
-          console.log('Failed to save to SecureStore');
+          // SecureStore save failed silently
         }
       },
       removeItem: async (key) => {
         try {
           await SecureStore.deleteItemAsync(key);
         } catch {
-          console.log('Failed to remove from SecureStore');
+          // SecureStore remove failed silently
         }
       },
     },
@@ -51,14 +51,14 @@ const secureStorage = {
     try {
       await SecureStore.setItemAsync(name, value);
     } catch {
-      console.log('Failed to save to SecureStore');
+      // SecureStore save failed silently
     }
   },
   removeItem: async (name: string): Promise<void> => {
     try {
       await SecureStore.deleteItemAsync(name);
     } catch {
-      console.log('Failed to remove from SecureStore');
+      // SecureStore remove failed silently
     }
   },
 };
@@ -188,13 +188,49 @@ export const useAuthStore = create<AuthState>()(
       },
 
       signInWithApple: async () => {
-        // Implementation requires native setup
-        return { success: false, error: 'Not implemented yet' };
+        set({ isLoading: true });
+        try {
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'apple',
+            options: {
+              redirectTo: 'voicefit://',
+            },
+          });
+
+          if (error) {
+            set({ isLoading: false });
+            return { success: false, error: error.message };
+          }
+
+          set({ isLoading: false });
+          return { success: true };
+        } catch (error: any) {
+          set({ isLoading: false });
+          return { success: false, error: error.message || 'Apple sign in failed' };
+        }
       },
 
       signInWithGoogle: async () => {
-        // Implementation requires native setup
-        return { success: false, error: 'Not implemented yet' };
+        set({ isLoading: true });
+        try {
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+              redirectTo: 'voicefit://',
+            },
+          });
+
+          if (error) {
+            set({ isLoading: false });
+            return { success: false, error: error.message };
+          }
+
+          set({ isLoading: false });
+          return { success: true };
+        } catch (error: any) {
+          set({ isLoading: false });
+          return { success: false, error: error.message || 'Google sign in failed' };
+        }
       },
 
       refreshSession: async () => {

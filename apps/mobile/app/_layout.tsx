@@ -1,12 +1,13 @@
 import '../global.css';
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import { api, createTRPCClient } from '../src/lib/trpc';
 import { useAuthStore } from '../src/stores/auth';
+import { initPowerSync } from '../src/lib/powersync';
 
 // Create query client
 const queryClient = new QueryClient({
@@ -25,13 +26,33 @@ function RootLayoutNav() {
   const { isDark, colors } = useTheme();
   const initialize = useAuthStore((state) => state.initialize);
   const isInitialized = useAuthStore((state) => state.isInitialized);
+  const session = useAuthStore((state) => state.session);
+  const router = useRouter();
+  const segments = useSegments();
 
-  // Initialize auth on mount
   useEffect(() => {
     initialize();
   }, []);
 
-  // Wait for auth to initialize
+  useEffect(() => {
+    if (session) {
+      initPowerSync();
+    }
+  }, [session]);
+
+  // Auth guard: redirect based on auth state
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!session && !inAuthGroup) {
+      router.replace('/(auth)/login');
+    } else if (session && inAuthGroup) {
+      router.replace('/(tabs)');
+    }
+  }, [session, isInitialized, segments]);
+
   if (!isInitialized) {
     return null;
   }

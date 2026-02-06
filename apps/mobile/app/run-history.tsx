@@ -17,15 +17,18 @@ import { api } from '../src/lib/trpc';
 import { useDistanceUnit, formatDistance, formatPace, formatDuration } from '../src/stores/profile';
 import { spacing, fontSize, fontWeight, borderRadius } from '../src/theme/tokens';
 
-const runTypeColors: Record<string, string> = {
-  easy: '#4ECDC4',
-  tempo: '#FFE66D',
-  interval: '#FF6B6B',
-  long_run: '#95E1D3',
-  recovery: '#A8E6CF',
-  fartlek: '#DDA0DD',
-  hill: '#F4A460',
-  race: '#FFD700',
+const getRunTypeColor = (runType: string, colors: any): string => {
+  const map: Record<string, string> = {
+    easy: colors.activity.running,
+    tempo: colors.activity.tempo,
+    interval: colors.activity.interval,
+    long_run: colors.activity.running,
+    recovery: colors.activity.recovery,
+    fartlek: colors.accent.purple,
+    hill: colors.accent.orange,
+    race: colors.accent.yellow,
+  };
+  return map[runType] || colors.text.tertiary;
 };
 
 const runTypeLabels: Record<string, string> = {
@@ -74,7 +77,7 @@ export default function RunHistoryScreen() {
   };
 
   const renderRun = ({ item }: { item: any }) => {
-    const typeColor = runTypeColors[item.runType] || colors.accent.blue;
+    const typeColor = getRunTypeColor(item.runType, colors);
 
     return (
       <TouchableOpacity
@@ -200,7 +203,7 @@ export default function RunHistoryScreen() {
               marginTop: spacing.sm,
             }}
           >
-            <Heart size={14} color="#FF6B6B" />
+            <Heart size={14} color={colors.activity.strength} />
             <Text
               style={{
                 fontSize: fontSize.sm,

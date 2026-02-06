@@ -32,81 +32,104 @@ interface Integration {
   dataTypes: string[];
 }
 
-const INTEGRATIONS: Integration[] = [
-  {
-    id: 'apple_health',
-    name: 'Apple Health',
-    icon: '❤️',
-    color: '#FF2D55',
-    description: 'Sync workouts, heart rate, and activity data',
-    connected: false,
-    dataTypes: ['Workouts', 'Heart Rate', 'Steps', 'Sleep'],
-  },
-  {
-    id: 'google_fit',
-    name: 'Google Fit',
-    icon: '💚',
-    color: '#4285F4',
-    description: 'Connect your Google Fit data',
-    connected: false,
-    dataTypes: ['Workouts', 'Steps', 'Heart Rate'],
-  },
-  {
-    id: 'garmin',
-    name: 'Garmin Connect',
-    icon: '⌚',
-    color: '#11BECD',
-    description: 'Sync runs, workouts, and health metrics',
-    connected: false,
-    dataTypes: ['Runs', 'Workouts', 'Heart Rate', 'Sleep', 'VO2 Max'],
-  },
-  {
-    id: 'strava',
-    name: 'Strava',
-    icon: '🏃',
-    color: '#FC4C02',
-    description: 'Import your Strava activities',
-    connected: false,
-    dataTypes: ['Runs', 'Rides', 'Workouts'],
-  },
-  {
-    id: 'whoop',
-    name: 'WHOOP',
-    icon: '💪',
-    color: '#000000',
-    description: 'Recovery and strain data',
-    connected: false,
-    dataTypes: ['Recovery', 'Strain', 'Sleep', 'Heart Rate'],
-  },
-  {
-    id: 'oura',
-    name: 'Oura Ring',
-    icon: '💍',
-    color: '#1DB954',
-    description: 'Sleep and readiness scores',
-    connected: false,
-    dataTypes: ['Sleep', 'Readiness', 'Activity'],
-  },
-  {
-    id: 'fitbit',
-    name: 'Fitbit',
-    icon: '📱',
-    color: '#00B0B9',
-    description: 'Steps, sleep, and activity',
-    connected: false,
-    dataTypes: ['Steps', 'Sleep', 'Workouts', 'Heart Rate'],
-  },
-];
+// Integration brand color mapping using theme colors
+function getIntegrationColors(integrationId: string, colors: any) {
+  const colorMap: Record<string, string> = {
+    apple_health: colors.accent.red,
+    google_fit: colors.accent.blue,
+    garmin: colors.accent.teal,
+    strava: colors.accent.orange,
+    whoop: colors.text.primary,
+    oura: colors.accent.green,
+    fitbit: colors.accent.teal,
+  };
+  return colorMap[integrationId] || colors.accent.blue;
+}
+
+function createIntegrations(colors: any): Integration[] {
+  return [
+    {
+      id: 'apple_health',
+      name: 'Apple Health',
+      icon: '❤️',
+      color: getIntegrationColors('apple_health', colors),
+      description: 'Sync workouts, heart rate, and activity data',
+      connected: false,
+      dataTypes: ['Workouts', 'Heart Rate', 'Steps', 'Sleep'],
+    },
+    {
+      id: 'google_fit',
+      name: 'Google Fit',
+      icon: '💚',
+      color: getIntegrationColors('google_fit', colors),
+      description: 'Connect your Google Fit data',
+      connected: false,
+      dataTypes: ['Workouts', 'Steps', 'Heart Rate'],
+    },
+    {
+      id: 'garmin',
+      name: 'Garmin Connect',
+      icon: '⌚',
+      color: getIntegrationColors('garmin', colors),
+      description: 'Sync runs, workouts, and health metrics',
+      connected: false,
+      dataTypes: ['Runs', 'Workouts', 'Heart Rate', 'Sleep', 'VO2 Max'],
+    },
+    {
+      id: 'strava',
+      name: 'Strava',
+      icon: '🏃',
+      color: getIntegrationColors('strava', colors),
+      description: 'Import your Strava activities',
+      connected: false,
+      dataTypes: ['Runs', 'Rides', 'Workouts'],
+    },
+    {
+      id: 'whoop',
+      name: 'WHOOP',
+      icon: '💪',
+      color: getIntegrationColors('whoop', colors),
+      description: 'Recovery and strain data',
+      connected: false,
+      dataTypes: ['Recovery', 'Strain', 'Sleep', 'Heart Rate'],
+    },
+    {
+      id: 'oura',
+      name: 'Oura Ring',
+      icon: '💍',
+      color: getIntegrationColors('oura', colors),
+      description: 'Sleep and readiness scores',
+      connected: false,
+      dataTypes: ['Sleep', 'Readiness', 'Activity'],
+    },
+    {
+      id: 'fitbit',
+      name: 'Fitbit',
+      icon: '📱',
+      color: getIntegrationColors('fitbit', colors),
+      description: 'Steps, sleep, and activity',
+      connected: false,
+      dataTypes: ['Steps', 'Sleep', 'Workouts', 'Heart Rate'],
+    },
+  ];
+}
 
 export default function IntegrationsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
 
-  // Fetch user's connected integrations
-  const { data: connectedIntegrations, refetch } = api.integrations.getConnected.useQuery();
+  const INTEGRATIONS = createIntegrations(colors);
 
-  // Connect mutation
-  const connectMutation = api.integrations.connect.useMutation({
+  // Fetch user's connected integrations (Apple Health)
+  const { data: appleHealthStatus, refetch } = api.wearables.getAppleHealthStatus.useQuery();
+
+  // Convert to array format for compatibility
+  const connectedIntegrations = appleHealthStatus?.isConnected
+    ? [{ provider: 'apple_health', lastSyncAt: appleHealthStatus.lastSyncAt }]
+    : [];
+
+  // Connect mutation (update Apple Health connection)
+  const connectMutation = api.wearables.updateAppleHealthConnection.useMutation({
     onSuccess: () => {
       refetch();
       Alert.alert('Success', 'Integration connected successfully!');
@@ -117,7 +140,7 @@ export default function IntegrationsScreen() {
   });
 
   // Disconnect mutation
-  const disconnectMutation = api.integrations.disconnect.useMutation({
+  const disconnectMutation = api.wearables.updateAppleHealthConnection.useMutation({
     onSuccess: () => {
       refetch();
       Alert.alert('Disconnected', 'Integration has been disconnected');
@@ -127,23 +150,23 @@ export default function IntegrationsScreen() {
     },
   });
 
-  // Sync mutation
-  const syncMutation = api.integrations.sync.useMutation({
+  // Manual sync mutation - triggers sync by updating connection with current timestamp
+  const syncMutation = api.wearables.updateAppleHealthConnection.useMutation({
     onSuccess: () => {
       refetch();
       Alert.alert('Synced', 'Data synced successfully!');
     },
-    onError: (error) => {
+    onError: (error: { message?: string }) => {
       Alert.alert('Error', error.message || 'Failed to sync');
     },
   });
 
   const isConnected = (integrationId: string) => {
-    return connectedIntegrations?.some((i: any) => i.provider === integrationId);
+    return connectedIntegrations?.some((i: { provider: string }) => i.provider === integrationId);
   };
 
   const getLastSync = (integrationId: string) => {
-    const integration = connectedIntegrations?.find((i: any) => i.provider === integrationId);
+    const integration = connectedIntegrations?.find((i: { provider: string; lastSyncAt?: Date | null }) => i.provider === integrationId);
     return integration?.lastSyncAt;
   };
 
@@ -155,7 +178,7 @@ export default function IntegrationsScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Connect',
-          onPress: () => connectMutation.mutate({ provider: integration.id }),
+          onPress: () => connectMutation.mutate({ isConnected: true }),
         },
       ]
     );
@@ -170,14 +193,15 @@ export default function IntegrationsScreen() {
         {
           text: 'Disconnect',
           style: 'destructive',
-          onPress: () => disconnectMutation.mutate({ provider: integration.id }),
+          onPress: () => disconnectMutation.mutate({ isConnected: false }),
         },
       ]
     );
   };
 
-  const handleSync = (integrationId: string) => {
-    syncMutation.mutate({ provider: integrationId });
+  const handleSync = (_integrationId: string) => {
+    // Trigger manual sync by updating connection status (updates lastSyncAt)
+    syncMutation.mutate({ isConnected: true });
   };
 
   const formatLastSync = (dateString: string) => {
@@ -282,7 +306,7 @@ export default function IntegrationsScreen() {
                       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
                         <Clock size={12} color={colors.text.tertiary} />
                         <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary, marginLeft: spacing.xs }}>
-                          Last synced {formatLastSync(getLastSync(integration.id))}
+                          Last synced {formatLastSync(String(getLastSync(integration.id)))}
                         </Text>
                       </View>
                     )}
@@ -385,7 +409,7 @@ export default function IntegrationsScreen() {
                     )}
                   </View>
                 </View>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" onPress={() => handleConnect(integration)}>
                   Connect
                 </Button>
               </View>

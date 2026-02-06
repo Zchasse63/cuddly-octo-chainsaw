@@ -45,7 +45,21 @@ export const userProfiles = pgTable('user_profiles', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// User preferences for notifications
+export const userPreferences = pgTable('user_preferences', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  emailNotifications: boolean('email_notifications').default(true).notNull(),
+  pushNotifications: boolean('push_notifications').default(true).notNull(),
+  smsNotifications: boolean('sms_notifications').default(false).notNull(),
+  weeklyDigest: boolean('weekly_digest').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type NewUserProfile = typeof userProfiles.$inferInsert;
+export type UserPreferences = typeof userPreferences.$inferSelect;
+export type NewUserPreferences = typeof userPreferences.$inferInsert;

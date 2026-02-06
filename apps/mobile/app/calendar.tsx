@@ -2,67 +2,49 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useMemo } from 'react';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import {
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   Dumbbell,
   Footprints,
-  Plus,
-  Calendar as CalendarIcon,
-  Clock,
-  Check,
-  X,
+  Moon,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react-native';
 import { useTheme } from '../src/theme/ThemeContext';
-import { Card, Button } from '../src/components/ui';
 import { api } from '../src/lib/trpc';
 import { spacing, fontSize, fontWeight, borderRadius } from '../src/theme/tokens';
+import { DayDetailSheet } from '../src/components/calendar/DayDetailSheet';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
-
-interface CalendarDay {
-  date: Date;
-  isCurrentMonth: boolean;
-  isToday: boolean;
-  hasWorkout: boolean;
-  hasRun: boolean;
-  isRestDay: boolean;
-  isCompleted: boolean;
-}
 
 export default function CalendarScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    return weekStart;
+  });
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [sheetVisible, setSheetVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Get start and end of current month view
-  const { startDate, endDate } = useMemo(() => {
-    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-    const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-    // Extend to full weeks
-    start.setDate(start.getDate() - start.getDay());
-    end.setDate(end.getDate() + (6 - end.getDay()));
-    return { startDate: start, endDate: end };
-  }, [currentDate]);
+  // Calculate week end date
+  const weekEndDate = useMemo(() => {
+    const end = new Date(currentWeekStart);
+    end.setDate(currentWeekStart.getDate() + 6);
+    return end;
+  }, [currentWeekStart]);
 
-  // Fetch calendar entries for the visible range
-  const { data: calendarEntries, refetch } = api.calendar.getRange.useQuery({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+  // Fetch calendar entries for the week
+  const { data: calendarEntries, refetch } = api.calendar.getEntries.useQuery({
+    startDate: currentWeekStart.toISOString().split('T')[0],
+    endDate: weekEndDate.toISOString().split('T')[0],
   });
-
-  // Fetch scheduled items for selected date
-  const { data: selectedDayItems } = api.calendar.getDay.useQuery(
-    { date: selectedDate?.toISOString() || '' },
-    { enabled: !!selectedDate }
-  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -70,53 +52,96 @@ export default function CalendarScreen() {
     setRefreshing(false);
   };
 
-  // Generate calendar grid
-  const calendarDays = useMemo(() => {
-    const days: CalendarDay[] = [];
-    const current = new Date(startDate);
+  // Generate 7 days for the week
+  const weekDays = useMemo(() => {
+    const days = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    while (current <= endDate) {
-      const dateStr = current.toISOString().split('T')[0];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(currentWeekStart);
+      date.setDate(currentWeekStart.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
       const entry = calendarEntries?.find(
         (e: any) => e.date.split('T')[0] === dateStr
       );
 
       days.push({
-        date: new Date(current),
-        isCurrentMonth: current.getMonth() === currentDate.getMonth(),
-        isToday: current.getTime() === today.getTime(),
-        hasWorkout: entry?.activityType === 'strength' || entry?.activityType === 'crossfit',
-        hasRun: entry?.activityType === 'running',
-        isRestDay: entry?.isRestDay || false,
-        isCompleted: entry?.status === 'completed',
+        date,
+        dayName: DAYS[date.getDay()],
+        dayNum: date.getDate(),
+        isToday: date.getTime() === today.getTime(),
+        entry,
       });
-
-      current.setDate(current.getDate() + 1);
     }
 
     return days;
-  }, [startDate, endDate, currentDate, calendarEntries]);
+  }, [currentWeekStart, calendarEntries]);
 
-  const goToPreviousMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  const goToPreviousWeek = () => {
+    const newWeekStart = new Date(currentWeekStart);
+    newWeekStart.setDate(currentWeekStart.getDate() - 7);
+    setCurrentWeekStart(newWeekStart);
   };
 
-  const goToNextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  const goToNextWeek = () => {
+    const newWeekStart = new Date(currentWeekStart);
+    newWeekStart.setDate(currentWeekStart.getDate() + 7);
+    setCurrentWeekStart(newWeekStart);
   };
 
   const goToToday = () => {
     const today = new Date();
-    setCurrentDate(today);
-    setSelectedDate(today);
+    const dayOfWeek = today.getDay();
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    setCurrentWeekStart(weekStart);
   };
 
-  const isSelectedDate = (date: Date) => {
-    if (!selectedDate) return false;
-    return date.toDateString() === selectedDate.toDateString();
+  // Swipe gesture handlers
+  const swipeGesture = Gesture.Pan()
+    .onEnd((event) => {
+      if (event.translationX > 100) {
+        goToPreviousWeek();
+      } else if (event.translationX < -100) {
+        goToNextWeek();
+      }
+    });
+
+  const getActivityIcon = (entry: any) => {
+    if (!entry) return null;
+
+    if (entry.activityType === 'running') {
+      return <Footprints size={24} color={colors.activity.running} />;
+    }
+    if (entry.title?.toLowerCase().includes('rest')) {
+      return <Moon size={24} color={colors.text.tertiary} />;
+    }
+    return <Dumbbell size={24} color={colors.accent.blue} />;
   };
+
+  const getStatusColor = (entry: any) => {
+    if (!entry) return colors.background.secondary;
+
+    if (entry.status === 'completed') return colors.status.success;
+    if (entry.status === 'missed') return colors.status.error;
+    if (entry.title?.toLowerCase().includes('rest')) return colors.text.tertiary;
+    return colors.accent.blue;
+  };
+
+  // Format week range header
+  const weekRangeText = useMemo(() => {
+    const startMonth = currentWeekStart.toLocaleDateString('en-US', { month: 'short' });
+    const startDay = currentWeekStart.getDate();
+    const endMonth = weekEndDate.toLocaleDateString('en-US', { month: 'short' });
+    const endDay = weekEndDate.getDate();
+
+    if (startMonth === endMonth) {
+      return `${startMonth} ${startDay} - ${endDay}`;
+    }
+    return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+  }, [currentWeekStart, weekEndDate]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background.primary }}>
@@ -142,7 +167,7 @@ export default function CalendarScreen() {
             marginLeft: spacing.md,
           }}
         >
-          Training Calendar
+          Calendar
         </Text>
         <TouchableOpacity onPress={goToToday}>
           <Text style={{ fontSize: fontSize.sm, color: colors.accent.blue }}>
@@ -156,7 +181,7 @@ export default function CalendarScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Month Navigation */}
+        {/* Week Navigation */}
         <View
           style={{
             flexDirection: 'row',
@@ -165,7 +190,7 @@ export default function CalendarScreen() {
             padding: spacing.md,
           }}
         >
-          <TouchableOpacity onPress={goToPreviousMonth}>
+          <TouchableOpacity onPress={goToPreviousWeek}>
             <ChevronLeft size={24} color={colors.text.primary} />
           </TouchableOpacity>
           <Text
@@ -175,110 +200,108 @@ export default function CalendarScreen() {
               color: colors.text.primary,
             }}
           >
-            {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
+            {weekRangeText}
           </Text>
-          <TouchableOpacity onPress={goToNextMonth}>
+          <TouchableOpacity onPress={goToNextWeek}>
             <ChevronRight size={24} color={colors.text.primary} />
           </TouchableOpacity>
         </View>
 
-        {/* Day Headers */}
-        <View
-          style={{
-            flexDirection: 'row',
-            paddingHorizontal: spacing.sm,
-            marginBottom: spacing.xs,
-          }}
-        >
-          {DAYS.map((day) => (
-            <View key={day} style={{ flex: 1, alignItems: 'center' }}>
-              <Text
-                style={{
-                  fontSize: fontSize.xs,
-                  fontWeight: fontWeight.medium,
-                  color: colors.text.tertiary,
-                }}
-              >
-                {day}
-              </Text>
-            </View>
-          ))}
-        </View>
+        {/* 7-Day Horizontal ScrollView with Swipe Gesture */}
+        <GestureDetector gesture={swipeGesture}>
+          <View style={{ paddingHorizontal: spacing.md }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: spacing.sm }}
+            >
+              {weekDays.map((day, index) => {
+                const statusColor = getStatusColor(day.entry);
+                const isSelected = selectedDate?.toDateString() === day.date.toDateString();
 
-        {/* Calendar Grid */}
-        <View style={{ paddingHorizontal: spacing.sm }}>
-          {Array.from({ length: Math.ceil(calendarDays.length / 7) }).map((_, weekIndex) => (
-            <View key={weekIndex} style={{ flexDirection: 'row', marginBottom: spacing.xs }}>
-              {calendarDays.slice(weekIndex * 7, (weekIndex + 1) * 7).map((day, dayIndex) => (
-                <TouchableOpacity
-                  key={dayIndex}
-                  onPress={() => setSelectedDate(day.date)}
-                  style={{
-                    flex: 1,
-                    aspectRatio: 1,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: borderRadius.md,
-                    backgroundColor: isSelectedDate(day.date)
-                      ? colors.accent.blue
-                      : day.isToday
-                      ? colors.accent.blue + '20'
-                      : 'transparent',
-                    margin: 2,
-                  }}
-                >
-                  <Text
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => {
+                      setSelectedDate(day.date);
+                      setSheetVisible(true);
+                    }}
                     style={{
-                      fontSize: fontSize.sm,
-                      fontWeight: day.isToday ? fontWeight.bold : fontWeight.regular,
-                      color: isSelectedDate(day.date)
-                        ? colors.text.onAccent
-                        : day.isCurrentMonth
-                        ? colors.text.primary
-                        : colors.text.disabled,
+                      width: 80,
+                      alignItems: 'center',
+                      padding: spacing.sm,
+                      borderRadius: borderRadius.lg,
+                      backgroundColor: isSelected
+                        ? colors.accent.blue
+                        : colors.background.secondary,
                     }}
                   >
-                    {day.date.getDate()}
-                  </Text>
+                    <Text
+                      style={{
+                        fontSize: fontSize.xs,
+                        fontWeight: fontWeight.medium,
+                        color: isSelected ? colors.text.onAccent : colors.text.tertiary,
+                        marginBottom: spacing.xs,
+                      }}
+                    >
+                      {day.dayName}
+                    </Text>
 
-                  {/* Activity indicators */}
-                  <View style={{ flexDirection: 'row', marginTop: 2, gap: 2 }}>
-                    {day.hasWorkout && (
+                    <View
+                      style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: 28,
+                        backgroundColor: day.isToday && !isSelected
+                          ? colors.accent.blue + '20'
+                          : isSelected
+                          ? colors.background.primary
+                          : 'transparent',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        marginBottom: spacing.xs,
+                        borderWidth: day.isToday ? 2 : 0,
+                        borderColor: colors.accent.blue,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: fontSize.xl,
+                          fontWeight: fontWeight.bold,
+                          color: isSelected
+                            ? colors.text.primary
+                            : day.isToday
+                            ? colors.accent.blue
+                            : colors.text.primary,
+                        }}
+                      >
+                        {day.dayNum}
+                      </Text>
+                    </View>
+
+                    {/* Activity Icon */}
+                    <View style={{ height: 32, justifyContent: 'center' }}>
+                      {getActivityIcon(day.entry)}
+                    </View>
+
+                    {/* Status Indicator */}
+                    {day.entry && (
                       <View
                         style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: 3,
-                          backgroundColor: day.isCompleted ? colors.accent.green : colors.accent.blue,
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: statusColor,
+                          marginTop: spacing.xs,
                         }}
                       />
                     )}
-                    {day.hasRun && (
-                      <View
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: 3,
-                          backgroundColor: day.isCompleted ? colors.accent.green : '#4ECDC4',
-                        }}
-                      />
-                    )}
-                    {day.isRestDay && (
-                      <View
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: 3,
-                          backgroundColor: colors.text.disabled,
-                        }}
-                      />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ))}
-        </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </GestureDetector>
 
         {/* Legend */}
         <View
@@ -287,161 +310,31 @@ export default function CalendarScreen() {
             justifyContent: 'center',
             gap: spacing.lg,
             padding: spacing.md,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border.light,
+            marginTop: spacing.md,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent.blue }} />
+            <Dumbbell size={16} color={colors.accent.blue} />
             <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Strength</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ECDC4' }} />
+            <Footprints size={16} color={colors.activity.running} />
             <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Running</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent.green }} />
-            <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Completed</Text>
+            <Moon size={16} color={colors.text.tertiary} />
+            <Text style={{ fontSize: fontSize.xs, color: colors.text.tertiary }}>Rest</Text>
           </View>
         </View>
-
-        {/* Selected Day Details */}
-        {selectedDate && (
-          <View style={{ padding: spacing.md }}>
-            <Text
-              style={{
-                fontSize: fontSize.lg,
-                fontWeight: fontWeight.semibold,
-                color: colors.text.primary,
-                marginBottom: spacing.sm,
-              }}
-            >
-              {selectedDate.toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </Text>
-
-            {selectedDayItems && selectedDayItems.length > 0 ? (
-              selectedDayItems.map((item: any) => (
-                <Card key={item.id} style={{ marginBottom: spacing.sm }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: borderRadius.md,
-                        backgroundColor: item.activityType === 'running'
-                          ? '#4ECDC420'
-                          : colors.accent.blue + '20',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        marginRight: spacing.md,
-                      }}
-                    >
-                      {item.activityType === 'running' ? (
-                        <Footprints size={24} color="#4ECDC4" />
-                      ) : (
-                        <Dumbbell size={24} color={colors.accent.blue} />
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          fontSize: fontSize.base,
-                          fontWeight: fontWeight.semibold,
-                          color: colors.text.primary,
-                        }}
-                      >
-                        {item.title}
-                      </Text>
-                      {item.estimatedDuration && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                          <Clock size={14} color={colors.text.tertiary} />
-                          <Text
-                            style={{
-                              fontSize: fontSize.sm,
-                              color: colors.text.tertiary,
-                              marginLeft: spacing.xs,
-                            }}
-                          >
-                            ~{Math.round(item.estimatedDuration / 60)} min
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    {item.status === 'completed' ? (
-                      <View
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: colors.accent.green + '20',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <Check size={18} color={colors.accent.green} />
-                      </View>
-                    ) : item.status === 'skipped' ? (
-                      <View
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: colors.semantic.error + '20',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <X size={18} color={colors.semantic.error} />
-                      </View>
-                    ) : (
-                      <Button
-                        size="sm"
-                        onPress={() => {
-                          if (item.activityType === 'running') {
-                            router.push('/(tabs)/run');
-                          } else {
-                            router.push('/(tabs)/workout');
-                          }
-                        }}
-                      >
-                        Start
-                      </Button>
-                    )}
-                  </View>
-                </Card>
-              ))
-            ) : (
-              <Card>
-                <View style={{ alignItems: 'center', padding: spacing.md }}>
-                  <CalendarIcon size={32} color={colors.text.disabled} />
-                  <Text
-                    style={{
-                      fontSize: fontSize.base,
-                      color: colors.text.tertiary,
-                      marginTop: spacing.sm,
-                      textAlign: 'center',
-                    }}
-                  >
-                    No training scheduled
-                  </Text>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() => router.push('/(tabs)/chat')}
-                    style={{ marginTop: spacing.md }}
-                  >
-                    Ask Coach to Plan
-                  </Button>
-                </View>
-              </Card>
-            )}
-          </View>
-        )}
       </ScrollView>
+
+      {selectedDate && (
+        <DayDetailSheet
+          visible={sheetVisible}
+          date={selectedDate.toISOString().split('T')[0]}
+          onClose={() => setSheetVisible(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }

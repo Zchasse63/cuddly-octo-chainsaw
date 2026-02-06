@@ -96,9 +96,12 @@ export default function WearablesScreen() {
 
   const handleConnect = async (integrationId: string) => {
     setIsConnecting(integrationId);
-    // TODO: OAuth flow
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsConnecting(null);
+    try {
+      // OAuth flow integration pending
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } finally {
+      setIsConnecting(null);
+    }
   };
 
   const handleDisconnect = (deviceId: string) => {
@@ -310,7 +313,7 @@ export default function WearablesScreen() {
         </Text>
 
         {availableIntegrations.map((integration) => {
-          const isConnecting = isConnecting === integration.id;
+          const isCurrentlyConnecting = isConnecting === integration.id;
           const isAlreadyConnected = connectedDevices.some(
             (d) => d.id === integration.id || d.brand.toLowerCase().includes(integration.brand.toLowerCase())
           );
@@ -361,7 +364,7 @@ export default function WearablesScreen() {
                 </View>
                 <TouchableOpacity
                   onPress={() => handleConnect(integration.id)}
-                  disabled={isConnecting || isAlreadyConnected}
+                  disabled={isCurrentlyConnecting || isAlreadyConnected}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -373,7 +376,7 @@ export default function WearablesScreen() {
                     paddingVertical: spacing.sm,
                   }}
                 >
-                  {isConnecting ? (
+                  {isCurrentlyConnecting ? (
                     <ActivityIndicator size="small" color={colors.text.onAccent} />
                   ) : (
                     <>

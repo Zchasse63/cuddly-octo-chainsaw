@@ -13,11 +13,10 @@ import {
   Clock,
   Palette,
 } from 'lucide-react-native';
-import { useTheme } from '../../src/theme/ThemeContext';
+import { useTheme, ThemeMode } from '../../src/theme/ThemeContext';
 import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
 
 type UnitSystem = 'metric' | 'imperial';
-type ThemeMode = 'light' | 'dark' | 'system';
 type WeekStart = 'sunday' | 'monday';
 
 export default function PreferencesScreen() {
@@ -368,7 +367,7 @@ export default function PreferencesScreen() {
           label="Language"
           value={language}
           onPress={() => {
-            // TODO: Open language picker
+            // Language picker implementation pending
           }}
         />
 

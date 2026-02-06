@@ -311,23 +311,53 @@ export function AnimatedProgress({
 interface AnimatedCounterProps {
   value: number;
   duration?: number;
+  decimals?: number;
+  format?: (value: number) => string;
   style?: any;
 }
 
-export function AnimatedCounter({ value, duration = 1000, style }: AnimatedCounterProps) {
+export function AnimatedCounter({
+  value,
+  duration = 1000,
+  decimals = 0,
+  format,
+  style
+}: AnimatedCounterProps) {
   const animatedValue = useSharedValue(0);
+  const [displayValue, setDisplayValue] = React.useState('0');
 
   useEffect(() => {
     animatedValue.value = withTiming(value, {
       duration,
       easing: Easing.out(Easing.cubic),
     });
-  }, [value]);
+  }, [value, duration]);
 
-  const animatedProps = useAnimatedStyle(() => ({
-    // Note: For text animation, you'd use react-native-reanimated's
-    // useAnimatedProps with Text component
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const current = animatedValue.value;
+      const rounded = decimals === 0
+        ? Math.round(current)
+        : Number(current.toFixed(decimals));
+      const formatted = format ? format(rounded) : rounded.toString();
+      setDisplayValue(formatted);
+    }, 16); // ~60fps
+
+    return () => clearInterval(interval);
+  }, [animatedValue, decimals, format]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      animatedValue.value,
+      [0, value],
+      [0.5, 1],
+      Extrapolate.CLAMP
+    ),
   }));
 
-  return null; // Placeholder - implement with Text animation
+  return (
+    <Animated.Text style={[style, animatedStyle]}>
+      {displayValue}
+    </Animated.Text>
+  );
 }

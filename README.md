@@ -6,21 +6,27 @@ A voice-first fitness tracking application with AI coaching, personalized progra
 
 | Document | Description |
 |----------|-------------|
+| [Project Completion Roadmap](docs/audits/PROJECT_COMPLETION_ROADMAP.md) | Full audit, issue inventory, and action plan |
 | [Master Plan](docs/implementation/MASTER_PLAN.md) | Technology decisions, feature tiers, status |
 | [Task List](docs/implementation/TASK_LIST.md) | 156 tasks across 11 phases |
 | [UI Specification](docs/UI_SPECIFICATION.md) | Design system, colors, typography |
 | [API Reference](docs/implementation/API_REFERENCE.md) | tRPC router documentation |
+| [AI Tool Catalog](docs/TOOL_CATALOG.md) | 60 AI tools with full specs |
 
 ## Project Structure
 
 ```
 apps/
 ├── backend/          # tRPC + Drizzle + PostgreSQL (85% complete)
-├── mobile/           # React Native + Expo (in progress)
-└── web/              # Next.js Coach Dashboard (planned)
+├── mobile/           # React Native + Expo SDK 53 (60-70% complete)
+└── web/              # Next.js 15 Coach Dashboard (85-90% complete)
+
+packages/
+└── shared/           # Shared types and utilities
 
 docs/
 ├── implementation/   # Active planning documents
+├── audits/           # Project audits and roadmaps
 ├── reference/        # Source specifications
 └── archive/          # Historical documents
 ```
@@ -29,25 +35,33 @@ docs/
 
 | Layer | Technology |
 |-------|------------|
-| Mobile | React Native, Expo, Expo Router |
-| State | Zustand |
+| Mobile | React Native 0.79.6, Expo Router, Zustand, NativeWind |
+| Backend | tRPC 11, Drizzle ORM, PostgreSQL |
+| Web | Next.js 15, Tailwind CSS, Supabase SSR |
+| Database | Supabase (69 tables, 200+ indexes) |
 | Offline | PowerSync |
-| Backend | tRPC, Drizzle ORM |
-| Database | Supabase (PostgreSQL) |
-| AI | Grok (xAI) |
-| Search/RAG | Upstash Search |
+| AI | xAI Grok (4 models) via Vercel AI SDK |
+| AI Tools | 60 tools (35 athlete + 25 coach) |
+| Search | Upstash Vector |
+| Cache | Upstash Redis |
 
 ## Getting Started
 
 ```bash
 # Install dependencies
-pnpm install
+npm install
 
 # Start backend
-pnpm --filter backend dev
+npm run dev --workspace=apps/backend
 
-# Start mobile
-pnpm --filter mobile start
+# Start mobile (Expo)
+npm run dev --workspace=apps/mobile
+
+# Start web dashboard
+npm run dev --workspace=apps/web
+
+# Run all apps
+npm run dev
 ```
 
 ## Feature Tiers
@@ -58,4 +72,4 @@ pnpm --filter mobile start
 
 ---
 
-*See [docs/implementation/](docs/implementation/) for detailed planning.*
+*See [docs/audits/PROJECT_COMPLETION_ROADMAP.md](docs/audits/PROJECT_COMPLETION_ROADMAP.md) for current status and next steps.*

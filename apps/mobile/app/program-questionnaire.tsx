@@ -72,10 +72,10 @@ export default function ProgramQuestionnaireScreen() {
     limitations: [],
   });
 
-  // Generate program mutation
-  const generateMutation = api.coach.generateProgram.useMutation({
+  // Generate program mutation using calendar.submitQuestionnaire
+  const generateMutation = api.calendar.submitQuestionnaire.useMutation({
     onSuccess: (result) => {
-      router.replace(`/program-detail?id=${result.programId}`);
+      router.replace(`/program/${result.programId}` as any);
     },
   });
 
@@ -511,7 +511,36 @@ export default function ProgramQuestionnaireScreen() {
       <View style={{ padding: spacing.md, paddingBottom: spacing.lg }}>
         {currentStep === 'review' ? (
           <Button
-            onPress={() => generateMutation.mutate(data)}
+            onPress={() => {
+              // Map mobile goal IDs to backend goal types
+              const goalMap: Record<string, string> = {
+                strength: 'get_stronger',
+                muscle: 'build_muscle',
+                endurance: 'improve_endurance',
+                hybrid: 'general_fitness', // Map hybrid to general_fitness
+                weightloss: 'lose_fat',
+                maintenance: 'general_fitness',
+              };
+              // Map training type based on goal
+              const trainingTypeMap: Record<string, 'strength_only' | 'running_only' | 'hybrid' | 'crossfit' | 'undecided'> = {
+                strength: 'strength_only',
+                muscle: 'strength_only',
+                endurance: 'running_only',
+                hybrid: 'hybrid',
+                weightloss: 'hybrid',
+                maintenance: 'hybrid',
+              };
+              generateMutation.mutate({
+                trainingType: trainingTypeMap[data.primaryGoal] || 'hybrid',
+                primaryGoal: (goalMap[data.primaryGoal] || 'general_fitness') as 'build_muscle' | 'lose_fat' | 'get_stronger' | 'improve_endurance' | 'general_fitness' | 'run_5k' | 'run_10k' | 'run_half_marathon' | 'run_marathon' | 'sport_performance' | 'body_recomposition',
+                daysPerWeek: data.daysPerWeek,
+                sessionDuration: data.sessionDuration,
+                experienceLevel: data.experienceLevel as 'beginner' | 'intermediate' | 'advanced',
+                availableEquipment: data.equipment,
+                currentInjuries: data.limitations,
+                additionalNotes: data.notes,
+              });
+            }}
             disabled={generateMutation.isPending}
           >
             {generateMutation.isPending ? 'Generating Program...' : 'Generate My Program'}

@@ -4,21 +4,23 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, Check } from 'lucide-react-native';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Button } from '../../src/components/ui';
-import { useOnboardingStore, TrainingFrequency, frequencyLabels } from '../../src/stores/onboarding';
+import { useOnboardingStore } from '../../src/stores/onboarding';
 import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
+
+const TRAINING_DAYS = [2, 3, 4, 5, 6] as const;
 
 export default function FrequencyScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { data, setTrainingFrequency, nextStep, prevStep, currentStep, totalSteps } = useOnboardingStore();
+  const { data, setTrainingDaysPerWeek, nextStep, prevStep, currentStep, totalSteps } = useOnboardingStore();
 
-  const handleSelect = (frequency: TrainingFrequency) => {
-    setTrainingFrequency(frequency);
+  const handleSelect = (days: number) => {
+    setTrainingDaysPerWeek(days);
   };
 
   const handleNext = () => {
     nextStep();
-    router.push('/(onboarding)/activities');
+    router.push('/(onboarding)/limitations');
   };
 
   const handleBack = () => {
@@ -70,19 +72,19 @@ export default function FrequencyScreen() {
               color: colors.text.secondary,
             }}
           >
-            We'll use this to create personalized training recommendations.
+            Choose the number of days per week you plan to train.
           </Text>
         </View>
 
         {/* Options */}
         <View style={{ flex: 1, gap: spacing.sm }}>
-          {(Object.keys(frequencyLabels) as TrainingFrequency[]).map((frequency) => {
-            const isSelected = data.trainingFrequency === frequency;
+          {TRAINING_DAYS.map((days) => {
+            const isSelected = data.trainingDaysPerWeek === days;
 
             return (
               <TouchableOpacity
-                key={frequency}
-                onPress={() => handleSelect(frequency)}
+                key={days}
+                onPress={() => handleSelect(days)}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -101,7 +103,7 @@ export default function FrequencyScreen() {
                     color: colors.text.primary,
                   }}
                 >
-                  {frequencyLabels[frequency]}
+                  {days} days per week
                 </Text>
                 {isSelected && (
                   <View
@@ -126,7 +128,7 @@ export default function FrequencyScreen() {
         <View style={{ marginTop: spacing.lg }}>
           <Button
             onPress={handleNext}
-            disabled={!data.trainingFrequency}
+            disabled={!data.trainingDaysPerWeek}
             fullWidth
           >
             Continue

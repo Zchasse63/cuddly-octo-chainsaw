@@ -37,6 +37,11 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background-secondary">
+      {/* Skip to content link for accessibility */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
@@ -63,6 +68,7 @@ export default function DashboardLayout({
             </Link>
             <button
               onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
               className="lg:hidden p-1 rounded-lg hover:bg-background-secondary"
             >
               <X className="w-5 h-5" />
@@ -104,7 +110,7 @@ export default function DashboardLayout({
                 <p className="font-medium truncate">John Doe</p>
                 <p className="text-sm text-text-secondary truncate">Coach Pro</p>
               </div>
-              <button className="p-2 hover:bg-background-tertiary rounded-lg transition-colors">
+              <button aria-label="Log out" className="p-2 hover:bg-background-tertiary rounded-lg transition-colors">
                 <LogOut className="w-4 h-4 text-text-secondary" />
               </button>
             </div>
@@ -120,6 +126,7 @@ export default function DashboardLayout({
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
+                aria-label="Open sidebar menu"
                 className="lg:hidden p-2 rounded-lg hover:bg-background-tertiary"
               >
                 <Menu className="w-5 h-5" />
@@ -134,7 +141,7 @@ export default function DashboardLayout({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button className="relative p-2 rounded-lg hover:bg-background-tertiary transition-colors">
+              <button aria-label="View notifications" className="relative p-2 rounded-lg hover:bg-background-tertiary transition-colors">
                 <Bell className="w-5 h-5 text-text-secondary" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-accent-red rounded-full" />
               </button>
@@ -143,7 +150,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="p-4 lg:p-8">{children}</main>
+        <main id="main-content" className="p-4 lg:p-8">{children}</main>
       </div>
     </div>
   );

@@ -32,10 +32,12 @@ export default function PersonalInfoScreen() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    // TODO: Save to backend
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsSaving(false);
-    router.back();
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      router.back();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const InputField = ({

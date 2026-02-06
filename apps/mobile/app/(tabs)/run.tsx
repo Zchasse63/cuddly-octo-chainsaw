@@ -34,6 +34,10 @@ import { useAuthStore } from '../../src/stores/auth';
 import { api } from '../../src/lib/trpc';
 import { useDistanceUnit, formatDistance, formatPace } from '../../src/stores/profile';
 import { spacing, fontSize, fontWeight, borderRadius } from '../../src/theme/tokens';
+import { ActiveRunMap } from '../../src/components/running/ActiveRunMap';
+import { RunStatsOverlay } from '../../src/components/running/RunStatsOverlay';
+import { PreRunSetup } from '../../src/components/running/PreRunSetup';
+import { BadgeCelebration } from '../../src/components/badges/BadgeCelebration';
 
 type RunStatus = 'idle' | 'running' | 'paused';
 type RunType = 'easy' | 'tempo' | 'interval' | 'long_run' | 'recovery' | 'fartlek' | 'hill' | 'race';
@@ -77,7 +81,9 @@ export default function RunScreen() {
   const [runType, setRunType] = useState<RunType>('easy');
   const [showRunTypePicker, setShowRunTypePicker] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showPreRunSetup, setShowPreRunSetup] = useState(false);
   const [selectedShoeId, setSelectedShoeId] = useState<string | null>(null);
+  const [coordinates, setCoordinates] = useState<Array<{latitude: number; longitude: number}>>([]);
   const [stats, setStats] = useState<RunStats>({
     distance: 0,
     duration: 0,
@@ -92,6 +98,8 @@ export default function RunScreen() {
     message: '',
     type: 'success',
   });
+  const [showBadgeCelebration, setShowBadgeCelebration] = useState(false);
+  const [newlyEarnedBadge, setNewlyEarnedBadge] = useState<any>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
@@ -104,13 +112,31 @@ export default function RunScreen() {
   const pulseScale = useSharedValue(1);
 
   // Fetch user's shoes
-  const { data: shoes } = api.running.getShoes.useQuery(undefined, { enabled: !!user });
+  const { data: shoes } = api.shoes.getAll.useQuery(undefined, { enabled: !!user });
+
+  // Badge check mutation
+  const checkBadgesMutation = api.gamification.checkBadgesAfterRun.useMutation();
 
   // Save run mutation
-  const saveRunMutation = api.running.saveActivity.useMutation({
-    onSuccess: (data) => {
+  const saveRunMutation = api.running.logActivity.useMutation({
+    onSuccess: async (data) => {
       setToast({ visible: true, message: 'Run saved!', type: 'success' });
-      router.push(`/run/${data.id}`);
+
+      // Check for new badges
+      try {
+        const badgeResult = await checkBadgesMutation.mutateAsync({ activityId: data.activity.id });
+        if (badgeResult?.newBadges && badgeResult.newBadges.length > 0) {
+          const firstBadge = badgeResult.newBadges[0];
+          if (firstBadge?.definition) {
+            setNewlyEarnedBadge(firstBadge.definition);
+            setShowBadgeCelebration(true);
+          }
+        }
+      } catch (e) {
+        // Badge check failed silently - don't block run completion
+      }
+
+      router.push(`/run/${data.activity.id}`);
     },
     onError: (error) => {
       setToast({ visible: true, message: error.message, type: 'error' });
@@ -204,6 +230,9 @@ export default function RunScreen() {
         const { latitude, longitude } = location.coords;
         const timestamp = location.timestamp;
 
+        // Track coordinates for map
+        setCoordinates(prev => [...prev, { latitude, longitude }]);
+
         if (lastPosition.current) {
           const dist = calculateDistance(
             lastPosition.current.lat,
@@ -296,12 +325,12 @@ export default function RunScreen() {
 
     saveRunMutation.mutate({
       runType,
-      startedAt: startTimeRef.current.toISOString(),
-      completedAt: new Date().toISOString(),
+      startedAt: startTimeRef.current,
+      completedAt: new Date(),
       distanceMeters: stats.distance,
       durationSeconds: stats.duration,
       avgPaceSecondsPerKm: stats.avgPace,
-      calories: stats.calories,
+      caloriesBurned: stats.calories,
       shoeId: selectedShoeId || undefined,
       splits: stats.splits.map((s, i) => ({
         splitNumber: i + 1,
@@ -431,6 +460,23 @@ export default function RunScreen() {
           </View>
         )}
 
+        {/* Map View (when running) */}
+        {status !== 'idle' && coordinates.length > 0 && (
+          <View style={{ height: 300, marginBottom: spacing.lg, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
+            <ActiveRunMap
+              coordinates={coordinates}
+              currentLocation={coordinates[coordinates.length - 1] || null}
+            />
+            <RunStatsOverlay
+              elapsedTime={formatDuration(stats.duration)}
+              currentPace={formatPaceDisplay(stats.currentPace)}
+              distance={formatDistance(stats.distance, distanceUnit)}
+              distanceUnit={distanceUnit}
+              splitTime={splitDistance.current > 0 ? formatDuration(stats.duration - splitStartTime.current) : undefined}
+            />
+          </View>
+        )}
+
         {/* Main Stats */}
         <Animated.View style={status === 'running' ? pulseStyle : {}}>
           <Card
@@ -518,7 +564,7 @@ export default function RunScreen() {
         {/* Controls */}
         <View style={{ flex: 1, justifyContent: 'flex-end', gap: spacing.md }}>
           {status === 'idle' && (
-            <Button onPress={startRun} fullWidth>
+            <Button onPress={() => setShowPreRunSetup(true)} fullWidth>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Play size={20} color={colors.text.onAccent} />
                 <Text style={{ color: colors.text.onAccent, marginLeft: spacing.xs, fontWeight: fontWeight.semibold }}>
@@ -743,6 +789,34 @@ export default function RunScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Pre-Run Setup Modal */}
+      <PreRunSetup
+        visible={showPreRunSetup}
+        shoes={(shoes || []).map(s => ({
+          id: s.id,
+          name: s.nickname || s.brand || 'Shoe',
+          brand: s.brand || undefined,
+          isDefault: s.isDefault || undefined
+        }))}
+        onStartRun={(options: {shoeId: string | null; runType: RunType; targetDistance?: number; targetTime?: number}) => {
+          setRunType(options.runType);
+          if (options.shoeId) setSelectedShoeId(options.shoeId);
+          setShowPreRunSetup(false);
+          startRun();
+        }}
+        onDismiss={() => setShowPreRunSetup(false)}
+      />
+
+      {/* Badge Celebration Modal */}
+      <BadgeCelebration
+        visible={showBadgeCelebration}
+        badge={newlyEarnedBadge}
+        onDismiss={() => {
+          setShowBadgeCelebration(false);
+          setNewlyEarnedBadge(null);
+        }}
+      />
     </SafeAreaView>
   );
 }

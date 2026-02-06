@@ -51,26 +51,26 @@ export default function ChallengesScreen() {
   const getChallengeIcon = (type: string) => {
     switch (type) {
       case 'running':
-        return <Footprints size={24} color="#4ECDC4" />;
+        return <Footprints size={24} color={colors.activity.running} />;
       case 'strength':
         return <Dumbbell size={24} color={colors.accent.blue} />;
       case 'streak':
-        return <Flame size={24} color="#FF6B6B" />;
+        return <Flame size={24} color={colors.activity.strength} />;
       default:
-        return <Trophy size={24} color="#FFE66D" />;
+        return <Trophy size={24} color={colors.activity.tempo} />;
     }
   };
 
   const getChallengeColor = (type: string) => {
     switch (type) {
       case 'running':
-        return '#4ECDC4';
+        return colors.activity.running;
       case 'strength':
         return colors.accent.blue;
       case 'streak':
-        return '#FF6B6B';
+        return colors.activity.strength;
       default:
-        return '#FFE66D';
+        return colors.activity.tempo;
     }
   };
 
@@ -97,7 +97,7 @@ export default function ChallengesScreen() {
     const isCompleted = item.status === 'completed';
 
     return (
-      <TouchableOpacity onPress={() => router.push(`/challenge/${item.id}`)}>
+      <TouchableOpacity onPress={() => router.push(`/(tabs)/profile` as any)}>
         <Card style={{ marginBottom: spacing.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <View
@@ -205,15 +205,15 @@ export default function ChallengesScreen() {
                     flexDirection: 'row',
                     alignItems: 'center',
                     marginTop: spacing.sm,
-                    backgroundColor: '#FFE66D20',
+                    backgroundColor: colors.activity.tempo + '20',
                     paddingHorizontal: spacing.sm,
                     paddingVertical: spacing.xs,
                     borderRadius: borderRadius.sm,
                     alignSelf: 'flex-start',
                   }}
                 >
-                  <Award size={14} color="#FFE66D" />
-                  <Text style={{ fontSize: fontSize.xs, color: '#FFE66D', marginLeft: spacing.xs }}>
+                  <Award size={14} color={colors.activity.tempo} />
+                  <Text style={{ fontSize: fontSize.xs, color: colors.activity.tempo, marginLeft: spacing.xs }}>
                     Badge reward
                   </Text>
                 </View>
